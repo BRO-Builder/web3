@@ -17,52 +17,57 @@
   </header>
 
   <main>
-  <h1>Deploy FT (FA2) Contract</h1>
-  <p class="sub">Connect a wallet, pick a network, paste your compiled Michelson (.tz) code, and originate.</p>
+    <h1>Deploy FT (FA2) Contract</h1>
+    <p class="sub">Connect a wallet, pick a network, paste your compiled Michelson (.tz) code, and originate.</p>
 
-  <fieldset>
-    <legend>1. Network</legend>
-    <label for="network">Network</label>
-    <select id="network">
-      <option value="ghostnet" selected>Ghostnet (testnet)</option>
-      <option value="mainnet">Mainnet</option>
-      <option value="custom">Custom RPC</option>
-    </select>
-    <div id="customRpcWrap" style="display:none;">
-      <label for="customRpc">RPC URL</label>
-      <input type="text" id="customRpc" placeholder="https://your-node.example.com">
-    </div>
-  </fieldset>
+    <fieldset>
+      <legend>1. Network</legend>
+      <label for="network">Network</label>
+      <select id="network">
+        <option value="ghostnet" selected>Ghostnet (testnet)</option>
+        <option value="mainnet">Mainnet</option>
+        <option value="custom">Custom RPC</option>
+      </select>
+      <div id="customRpcWrap" style="display:none;">
+        <label for="customRpc">RPC URL</label>
+        <input type="text" id="customRpc" placeholder="https://your-node.example.com">
+      </div>
+    </fieldset>
 
-  <fieldset>
-    <legend>2. Wallet</legend>
-    <div class="row">
-      <button id="connectBtn">Connect Wallet</button>
-      <button id="disconnectBtn" class="secondary" style="display:none;">Disconnect</button>
-    </div>
-    <div id="walletInfo"></div>
-  </fieldset>
+    <fieldset>
+      <legend>2. Wallet</legend>
+      <div class="row">
+        <button id="connectBtn">Connect Wallet</button>
+        <button id="disconnectBtn" class="secondary" style="display:none;">Disconnect</button>
+      </div>
+      <div id="walletInfo"></div>
+    </fieldset>
 
-  <fieldset>
-    <legend>3. Token Details</legend>
-    <label for="tokenName">Token name</label>
-    <input type="text" id="tokenName" placeholder="e.g. BRO Builder Token">
-    <label for="tokenSymbol">Token symbol</label>
-    <input type="text" id="tokenSymbol" placeholder="e.g. BRO">
-  </fieldset>
+    <fieldset>
+      <legend>3. Token Details</legend>
+      <label for="tokenName">Token name</label>
+      <input type="text" id="tokenName" placeholder="e.g. BRO Builder Token">
+      <label for="tokenSymbol">Token symbol</label>
+      <input type="text" id="tokenSymbol" placeholder="e.g. BRO">
+    </fieldset>
 
-  <fieldset>
-    <legend>4. Compiled Contract (.tz Michelson)</legend>
-    <label for="contractCode">Paste the compiled Michelson code here</label>
-    <textarea id="contractCode" placeholder="parameter ...;
-  storage ...;
-  code { ... }"></textarea>
-  </fieldset>
+    <fieldset>
+      <legend>4. Compiled Contract (.tz Michelson)</legend>
+      <div class="row" style="justify-content: space-between;">
+        <label for="contractCode" style="margin:10px 0 4px;">Fetched from source link</label>
+        <button id="reloadCodeBtn" class="secondary" type="button" style="padding:6px 12px; font-size:0.75rem;">Reload</button>
+      </div>
+      <div id="codeSpinnerRow" class="row" style="display:none; margin-bottom:8px;">
+        <span class="spinner"></span>
+        <span style="font-size:0.85rem; color:#5a5f68;">Fetching contract code...</span>
+      </div>
+      <textarea id="contractCode" placeholder="Contract code will be fetched automatically..." readonly></textarea>
+    </fieldset>
 
-  <button id="deployBtn" class="deploy" disabled>Deploy Contract</button>
+    <button id="deployBtn" class="deploy" disabled>Deploy Contract</button>
 
-  <h3>Status</h3>
-  <div id="status">Idle.</div>
+    <h3>Status</h3>
+    <div id="status">Idle.</div>
   </main>
 
   <footer>
