@@ -1,0 +1,38 @@
+{
+  "name": "brobuilder-contracts",
+  "version": "1.0.0",
+  "description": "",
+  "private": true,
+  "bugs": "https://github.com/eidoriantan/brobuilder-contracts/issues",
+  "homepage": "https://github.com/eidoriantan/brobuilder-contracts#readme",
+  "license": "UNLICENSED",
+  "author": {
+    "name": "Adriane Justine Tan",
+    "email": "me@eidoriantan.com",
+    "url": "https://eidoriantan.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eidoriantan/brobuilder-contracts.git"
+  },
+  "scripts": {
+    "build": "rollup -c",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "devDependencies": {
+    "@rollup/plugin-commonjs": "^29.0.3",
+    "@rollup/plugin-inject": "^5.0.5",
+    "@rollup/plugin-json": "^6.1.0",
+    "@rollup/plugin-node-resolve": "^16.0.3",
+    "@rollup/plugin-replace": "^6.0.3",
+    "esbuild": "^0.28.2",
+    "rollup": "^4.63.4",
+    "rollup-plugin-esbuild": "^6.2.1"
+  },
+  "dependencies": {
+    "@taquito/beacon-wallet": "^25.0.0",
+    "@taquito/michel-codec": "^25.0.0",
+    "@taquito/taquito": "^25.0.0",
+    "buffer": "^6.0.3"
+  }
+}

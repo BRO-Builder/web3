@@ -1,6 +1,6 @@
-import { TezosToolkit, MichelsonMap } from "https://unpkg.com/@taquito/taquito@25.0.0/dist/taquito.es6.js";
-import { Parser } from "https://unpkg.com/@taquito/michel-codec@25.0.0/dist/taquito-michel-codec.es6.js";
-import { BeaconWallet } from "https://unpkg.com/@taquito/beacon-wallet@25.0.0/dist/taquito-beacon-wallet.es6.js";
+import { TezosToolkit, MichelsonMap } from "https://esm.sh/@taquito/taquito@20";
+import { Parser } from "https://esm.sh/@taquito/michel-codec@20";
+import { BeaconWallet } from "https://esm.sh/@taquito/beacon-wallet@20";
 
 const RPCS = {
   mainnet: "https://mainnet.api.tez.ie",
@@ -26,24 +26,57 @@ function toHexBytes(str) {
   return Array.from(new TextEncoder().encode(str)).map(b => b.toString(16).padStart(2, "0")).join("");
 }
 
+function setConnectedUI(address, networkLabel) {
+  userAddress = address;
+  walletInfo.textContent = `Connected: ${address} (${networkLabel})`;
+  connectBtn.style.display = "none";
+  disconnectBtn.style.display = "inline-block";
+  deployBtn.disabled = false;
+}
+
+function setDisconnectedUI() {
+  userAddress = null;
+  walletInfo.textContent = "";
+  connectBtn.style.display = "inline-block";
+  disconnectBtn.style.display = "none";
+  deployBtn.disabled = true;
+}
+
+async function ensureWallet(rpc) {
+  if (!Tezos) Tezos = new TezosToolkit(rpc);
+  else Tezos.setRpcProvider(rpc);
+  if (!wallet) {
+    wallet = new BeaconWallet({ name: "BRO Builder FT Deploy" });
+    Tezos.setWalletProvider(wallet);
+  }
+  return wallet;
+}
+
+// On load: if Beacon already has an active session from a previous visit,
+// reflect that in the UI (including the ability to disconnect it).
+(async () => {
+  try {
+    const w = await ensureWallet(currentRpc());
+    const active = await w.client.getActiveAccount();
+    if (active) setConnectedUI(active.address, networkSel.value);
+  } catch (err) {
+    // no existing session, or storage unavailable — ignore
+  }
+})();
+
 connectBtn.addEventListener("click", async () => {
   try {
     setStatus("Opening wallet connect...");
     const rpc = currentRpc();
     if (!rpc) { setStatus("Set an RPC URL first."); return; }
-    Tezos = new TezosToolkit(rpc);
-    wallet = new BeaconWallet({ name: "BRO Builder FT Deploy" });
+    await ensureWallet(rpc);
     const netType = networkSel.value === "custom" ? "custom" : networkSel.value;
     const networkOpt = netType === "custom"
       ? { type: "custom", name: "Custom", rpcUrl: rpc }
       : { type: netType };
     await wallet.requestPermissions({ network: networkOpt });
-    Tezos.setWalletProvider(wallet);
-    userAddress = await wallet.getPKH();
-    walletInfo.textContent = `Connected: ${userAddress} (${networkSel.value})`;
-    connectBtn.style.display = "none";
-    disconnectBtn.style.display = "inline-block";
-    deployBtn.disabled = false;
+    const address = await wallet.getPKH();
+    setConnectedUI(address, networkSel.value);
     setStatus("Wallet connected.");
   } catch (err) {
     setStatus("Connect failed: " + (err?.message || err));
@@ -51,13 +84,12 @@ connectBtn.addEventListener("click", async () => {
 });
 
 disconnectBtn.addEventListener("click", async () => {
-  if (wallet) await wallet.clearActiveAccount();
-  userAddress = null;
-  walletInfo.textContent = "";
-  connectBtn.style.display = "inline-block";
-  disconnectBtn.style.display = "none";
-  deployBtn.disabled = true;
-  setStatus("Disconnected.");
+  try {
+    if (wallet) await wallet.clearActiveAccount();
+  } finally {
+    setDisconnectedUI();
+    setStatus("Disconnected.");
+  }
 });
 
 deployBtn.addEventListener("click", async () => {
