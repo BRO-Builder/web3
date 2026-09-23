@@ -1,6 +1,6 @@
-import { TezosToolkit, MichelsonMap } from "https://esm.sh/@taquito/taquito@20";
-import { Parser } from "https://esm.sh/@taquito/michel-codec@20";
-import { BeaconWallet } from "https://esm.sh/@taquito/beacon-wallet@20";
+import { TezosToolkit, MichelsonMap } from "https://unpkg.com/@taquito/taquito@25.0.0/dist/taquito.es6.js";
+import { Parser } from "https://unpkg.com/@taquito/michel-codec@25.0.0/dist/taquito-michel-codec.es6.js";
+import { BeaconWallet } from "https://unpkg.com/@taquito/beacon-wallet@25.0.0/dist/taquito-beacon-wallet.es6.js";
 
 const RPCS = {
   mainnet: "https://mainnet.api.tez.ie",
