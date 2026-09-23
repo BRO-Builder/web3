@@ -7,10 +7,13 @@ const RPCS = {
   ghostnet: "https://ghostnet.ecadinfra.com",
 };
 
+const TZ_FILE_URL = "http://static.eidoriantan.com/contracts/FA2.tz";
+
 const $ = (id) => document.getElementById(id);
 const networkSel = $("network"), customWrap = $("customRpcWrap"), customRpc = $("customRpc");
 const connectBtn = $("connectBtn"), disconnectBtn = $("disconnectBtn"), walletInfo = $("walletInfo");
 const deployBtn = $("deployBtn"), statusEl = $("status");
+const contractCodeEl = $("contractCode"), reloadCodeBtn = $("reloadCodeBtn"), codeSpinnerRow = $("codeSpinnerRow");
 
 let Tezos, wallet, userAddress = null;
 
@@ -46,21 +49,36 @@ async function ensureWallet(rpc) {
   if (!Tezos) Tezos = new TezosToolkit(rpc);
   else Tezos.setRpcProvider(rpc);
   if (!wallet) {
-    const netType = networkSel.value === "custom" ? "custom" : networkSel.value;
-    const networkOpt = netType === "custom"
-      ? { type: "custom", name: "Custom", rpcUrl: rpc }
-      : { type: netType };
-    wallet = new BeaconWallet({
-      name: "BRO Builder FT Deploy",
-      network: networkOpt
-    });
+    wallet = new BeaconWallet({ name: "BRO Builder FT Deploy" });
     Tezos.setWalletProvider(wallet);
   }
   return wallet;
 }
 
+async function loadContractCode() {
+  codeSpinnerRow.style.display = "flex";
+  contractCodeEl.value = "";
+  reloadCodeBtn.disabled = true;
+  try {
+    const res = await fetch(TZ_FILE_URL);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const text = await res.text();
+    contractCodeEl.value = text;
+    log("Contract code loaded from source link.");
+  } catch (err) {
+    log("Failed to fetch contract code: " + (err?.message || err));
+    contractCodeEl.value = "";
+  } finally {
+    codeSpinnerRow.style.display = "none";
+    reloadCodeBtn.disabled = false;
+  }
+}
+
+reloadCodeBtn.addEventListener("click", loadContractCode);
+
 // On load: if Beacon already has an active session from a previous visit,
-// reflect that in the UI (including the ability to disconnect it).
+// reflect that in the UI (including the ability to disconnect it). Also
+// fetch the compiled contract code from the source link.
 (async () => {
   try {
     const w = await ensureWallet(currentRpc());
@@ -69,6 +87,7 @@ async function ensureWallet(rpc) {
   } catch (err) {
     // no existing session, or storage unavailable — ignore
   }
+  loadContractCode();
 })();
 
 connectBtn.addEventListener("click", async () => {
@@ -77,7 +96,11 @@ connectBtn.addEventListener("click", async () => {
     const rpc = currentRpc();
     if (!rpc) { setStatus("Set an RPC URL first."); return; }
     await ensureWallet(rpc);
-    await wallet.requestPermissions();
+    const netType = networkSel.value === "custom" ? "custom" : networkSel.value;
+    const networkOpt = netType === "custom"
+      ? { type: "custom", name: "Custom", rpcUrl: rpc }
+      : { type: netType };
+    await wallet.requestPermissions({ network: networkOpt });
     const address = await wallet.getPKH();
     setConnectedUI(address, networkSel.value);
     setStatus("Wallet connected.");
