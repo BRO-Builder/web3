@@ -190,6 +190,27 @@ a.result {
   font-weight: 700;
 }
 
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2.5px solid #ddd9d0;
+  border-top-color: var(--amber);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  display: inline-block;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+textarea[readonly] {
+  background: #f2f1ee;
+  color: #444;
+}
+
 footer {
   max-width: 640px;
   margin: 40px auto 0;
