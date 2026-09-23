@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Deploy FT Contract | BRO Builder</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./styles/deployment-ft.css">
+</head>
+
+<body>
+  <header>
+    <img src="https://www.brobuilder.llc/images/logo2.png" alt="BRO Builder LLC">
+    <div class="tag">Web3 Portal</div>
+  </header>
+
+  <main>
+  <h1>Deploy FT (FA2) Contract</h1>
+  <p class="sub">Connect a wallet, pick a network, paste your compiled Michelson (.tz) code, and originate.</p>
+
+  <fieldset>
+    <legend>1. Network</legend>
+    <label for="network">Network</label>
+    <select id="network">
+      <option value="ghostnet" selected>Ghostnet (testnet)</option>
+      <option value="mainnet">Mainnet</option>
+      <option value="custom">Custom RPC</option>
+    </select>
+    <div id="customRpcWrap" style="display:none;">
+      <label for="customRpc">RPC URL</label>
+      <input type="text" id="customRpc" placeholder="https://your-node.example.com">
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>2. Wallet</legend>
+    <div class="row">
+      <button id="connectBtn">Connect Wallet</button>
+      <button id="disconnectBtn" class="secondary" style="display:none;">Disconnect</button>
+    </div>
+    <div id="walletInfo"></div>
+  </fieldset>
+
+  <fieldset>
+    <legend>3. Token Details</legend>
+    <label for="tokenName">Token name</label>
+    <input type="text" id="tokenName" placeholder="e.g. BRO Builder Token">
+    <label for="tokenSymbol">Token symbol</label>
+    <input type="text" id="tokenSymbol" placeholder="e.g. BRO">
+  </fieldset>
+
+  <fieldset>
+    <legend>4. Compiled Contract (.tz Michelson)</legend>
+    <label for="contractCode">Paste the compiled Michelson code here</label>
+    <textarea id="contractCode" placeholder="parameter ...;
+  storage ...;
+  code { ... }"></textarea>
+  </fieldset>
+
+  <button id="deployBtn" class="deploy" disabled>Deploy Contract</button>
+
+  <h3>Status</h3>
+  <div id="status">Idle.</div>
+  </main>
+
+  <footer>
+    BRO Builder LLC &mdash; deployment tool for internal / partner use.
+  </footer>
+
+  <script type="module" src="./scripts/deployment-ft.js"></script>
+</body>
+</html>

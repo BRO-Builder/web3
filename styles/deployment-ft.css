@@ -1,0 +1,200 @@
+:root {
+  --navy: #101b2d;
+  --navy-2: #16243b;
+  --amber: #e8971e;
+  --amber-dark: #c97e14;
+  --paper: #f6f5f2;
+  --line: #22334d;
+  --ok: #3aa86d;
+  --err: #d9573b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', -apple-system, sans-serif;
+  background: var(--paper);
+  color: #1c1c1c;
+  margin: 0;
+  padding-bottom: 60px;
+}
+
+header {
+  background: var(--navy);
+  padding: 18px 24px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border-bottom: 4px solid var(--amber);
+}
+
+header img {
+  height: 42px;
+}
+
+header .tag {
+  color: #b9c3d4;
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-left: auto;
+  text-align: right;
+}
+
+main {
+  max-width: 640px;
+  margin: 36px auto;
+  padding: 0 20px;
+}
+
+h1 {
+  font-family: 'Oswald', sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  font-size: 1.6rem;
+  color: var(--navy);
+  margin-bottom: 2px;
+}
+
+p.sub {
+  color: #5a5f68;
+  margin-top: 0;
+  margin-bottom: 28px;
+}
+
+fieldset {
+  border: 1px solid #ddd9d0;
+  border-left: 4px solid var(--amber);
+  border-radius: 4px;
+  background: #fff;
+  padding: 18px 20px;
+  margin-bottom: 20px;
+}
+
+legend {
+  font-family: 'Oswald', sans-serif;
+  text-transform: uppercase;
+  font-size: 0.85rem;
+  letter-spacing: 0.05em;
+  color: var(--navy);
+  padding: 0 6px;
+}
+
+label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #444;
+  margin: 10px 0 4px;
+}
+
+select,
+input[type=text],
+textarea {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 0.95rem;
+  background: #fff;
+}
+
+select:focus,
+input:focus,
+textarea:focus {
+  outline: 2px solid var(--amber);
+  border-color: var(--amber);
+}
+
+textarea {
+  font-family: ui-monospace, monospace;
+  font-size: 0.8rem;
+  min-height: 140px;
+  resize: vertical;
+}
+
+button {
+  padding: 11px 20px;
+  border: none;
+  border-radius: 4px;
+  background: var(--amber);
+  color: var(--navy);
+  font-family: 'Oswald', sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: var(--amber-dark);
+}
+
+button:disabled {
+  background: #ddd;
+  color: #999;
+  cursor: not-allowed;
+}
+
+button.secondary {
+  background: var(--navy);
+  color: #fff;
+}
+
+button.deploy {
+  width: 100%;
+  padding: 14px;
+  font-size: 1rem;
+}
+
+.row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+#walletInfo {
+  font-size: 0.85rem;
+  color: var(--ok);
+  margin-top: 10px;
+  font-weight: 600;
+}
+
+h3 {
+  font-family: 'Oswald', sans-serif;
+  text-transform: uppercase;
+  font-size: 0.95rem;
+  letter-spacing: 0.05em;
+  color: var(--navy);
+  margin-top: 26px;
+}
+
+#status {
+  white-space: pre-wrap;
+  background: var(--navy);
+  color: #dfe6f0;
+  border-radius: 4px;
+  padding: 12px 14px;
+  font-family: ui-monospace, monospace;
+  font-size: 0.8rem;
+  min-height: 40px;
+}
+
+a.result {
+  color: var(--amber);
+  font-weight: 700;
+}
+
+footer {
+  max-width: 640px;
+  margin: 40px auto 0;
+  padding: 16px 20px 0;
+  border-top: 1px solid #ddd9d0;
+  font-size: 0.75rem;
+  color: #8a8f98;
+}
