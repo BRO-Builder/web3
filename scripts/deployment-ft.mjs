@@ -46,7 +46,14 @@ async function ensureWallet(rpc) {
   if (!Tezos) Tezos = new TezosToolkit(rpc);
   else Tezos.setRpcProvider(rpc);
   if (!wallet) {
-    wallet = new BeaconWallet({ name: "BRO Builder FT Deploy" });
+    const netType = networkSel.value === "custom" ? "custom" : networkSel.value;
+    const networkOpt = netType === "custom"
+      ? { type: "custom", name: "Custom", rpcUrl: rpc }
+      : { type: netType };
+    wallet = new BeaconWallet({
+      name: "BRO Builder FT Deploy",
+      network: networkOpt
+    });
     Tezos.setWalletProvider(wallet);
   }
   return wallet;
@@ -70,11 +77,7 @@ connectBtn.addEventListener("click", async () => {
     const rpc = currentRpc();
     if (!rpc) { setStatus("Set an RPC URL first."); return; }
     await ensureWallet(rpc);
-    const netType = networkSel.value === "custom" ? "custom" : networkSel.value;
-    const networkOpt = netType === "custom"
-      ? { type: "custom", name: "Custom", rpcUrl: rpc }
-      : { type: netType };
-    await wallet.requestPermissions({ network: networkOpt });
+    await wallet.requestPermissions();
     const address = await wallet.getPKH();
     setConnectedUI(address, networkSel.value);
     setStatus("Wallet connected.");
