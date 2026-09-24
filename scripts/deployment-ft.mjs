@@ -16,6 +16,7 @@ const deployBtn = $("deployBtn"), statusEl = $("status");
 const contractCodeEl = $("contractCode"), reloadCodeBtn = $("reloadCodeBtn"), codeSpinnerRow = $("codeSpinnerRow");
 
 let Tezos, wallet, userAddress = null;
+let walletNetwork = null;
 
 function log(msg) { statusEl.textContent += "\n" + msg; statusEl.scrollTop = statusEl.scrollHeight; }
 function setStatus(msg) { statusEl.textContent = msg; }
@@ -48,17 +49,21 @@ function setDisconnectedUI() {
 async function ensureWallet(rpc) {
   if (!Tezos) Tezos = new TezosToolkit(rpc);
   else Tezos.setRpcProvider(rpc);
-  if (!wallet) {
-    const netType = networkSel.value === "custom" ? "custom" : networkSel.value;
-    const networkOpt = netType === "custom"
-      ? { type: "custom", name: "Custom", rpcUrl: rpc }
-      : { type: netType };
+
+  const netType = networkSel.value === "custom" ? "custom" : networkSel.value;
+  const networkOpt = netType === "custom"
+    ? { type: "custom", name: "Custom", rpcUrl: rpc }
+    : { type: netType };
+
+  if (!wallet || walletNetwork !== netType) {
     wallet = new BeaconWallet({
       name: "BRO Builder FT Deploy",
       network: networkOpt,
     });
     Tezos.setWalletProvider(wallet);
+    walletNetwork = netType;
   }
+
   return wallet;
 }
 
@@ -103,7 +108,15 @@ connectBtn.addEventListener("click", async () => {
     const rpc = currentRpc();
     if (!rpc) { setStatus("Set an RPC URL first."); return; }
     await ensureWallet(rpc);
-    await wallet.requestPermissions();
+
+    const existing = await wallet.client.getActiveAccount();
+    if (existing) await wallet.clearActiveAccount();
+    const netType = networkSel.value === "custom" ? "custom" : networkSel.value;
+    const networkOpt = netType === "custom"
+      ? { type: "custom", name: "Custom", rpcUrl: rpc }
+      : { type: netType };
+    await wallet.requestPermissions({ network: networkOpt });
+
     const address = await wallet.getPKH();
     setConnectedUI(address, networkSel.value);
     setStatus("Wallet connected.");
