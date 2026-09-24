@@ -7,7 +7,7 @@ const RPCS = {
   shadownet: "https://rpc.shadownet.teztnets.com",
 };
 
-const TZ_FILE_URL = "https://static.eidoriantan.com/contracts/FA2.tz";
+const TZ_FILE_URL = "https://static.eidoriantan.com/contracts/brotoken.tz";
 
 const $ = (id) => document.getElementById(id);
 const networkSel = $("network"), customWrap = $("customRpcWrap"), customRpc = $("customRpc");
@@ -142,10 +142,18 @@ deployBtn.addEventListener("click", async () => {
   try {
     const name = $("tokenName").value.trim();
     const symbol = $("tokenSymbol").value.trim();
+    const decimals = parseInt($("tokenDecimals").value.trim(), 10);
+    const totalSupply = parseInt($("tokenSupply").value.trim(), 10);
+    const description = $("tokenDescription").value.trim();
+    const thumbnail = $("tokenThumbnail").value.trim();
     const code = $("contractCode").value.trim();
     if (!userAddress) { setStatus("Connect a wallet first."); return; }
-    if (!name || !symbol) { setStatus("Enter both a token name and symbol."); return; }
     if (!code) { setStatus("Paste the compiled Michelson (.tz) code first."); return; }
+    if (!totalSupply) { setStatus("Enter the total supply."); return; }
+    if (!name || !symbol || !decimals) {
+      setStatus("Enter token name, symbol, and decimals.");
+      return;
+    }
 
     deployBtn.disabled = true;
     setStatus("Parsing contract code...");
@@ -155,20 +163,30 @@ deployBtn.addEventListener("click", async () => {
     const tokenInfo = new MichelsonMap();
     tokenInfo.set("name", toHexBytes(name));
     tokenInfo.set("symbol", toHexBytes(symbol));
+    tokenInfo.set("decimals", toHexBytes(decimals.toString()));
+    if (description) tokenInfo.set("description", toHexBytes(description));
+    if (thumbnail) tokenInfo.set("thumbnailUri", toHexBytes(thumbnail));
+    tokenInfo.set("shouldPreferSymbol", toHexBytes("true"));
 
     const tokenMetadata = new MichelsonMap();
     tokenMetadata.set(0, { token_id: 0, token_info: tokenInfo });
 
+    const contractMetadata = new MichelsonMap();
+    contractMetadata.set("", toHexBytes("https://brobuilder.llc/token-metadata-BRO.json"));
+
+    const ledger = new MichelsonMap();
+    ledger.set({ 0: userAddress, 1: 0 }, totalSupply);
+
+    const supply = new MichelsonMap();
+    supply.set(0, totalSupply);
+
     const storage = {
-      ledger: new MichelsonMap(),
+      ledger: ledger,
+      metadata: contractMetadata,
+      next_token_id: 1,
       operators: new MichelsonMap(),
-      token_ids: [0],
+      supply: supply,
       token_metadata: tokenMetadata,
-      token_supply: new MichelsonMap(),
-      extension: {
-        admin: userAddress,
-        token_usage: new MichelsonMap(),
-      },
     };
 
     log("Sending origination...");

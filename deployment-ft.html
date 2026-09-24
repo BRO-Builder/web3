@@ -46,9 +46,17 @@
     <fieldset>
       <legend>3. Token Details</legend>
       <label for="tokenName">Token name</label>
-      <input type="text" id="tokenName" placeholder="e.g. BRO Builder Token">
+      <input type="text" id="tokenName" placeholder="e.g. BRO Builder Token" required>
       <label for="tokenSymbol">Token symbol</label>
-      <input type="text" id="tokenSymbol" placeholder="e.g. BRO">
+      <input type="text" id="tokenSymbol" placeholder="e.g. BRO" required>
+      <label for="tokenDecimals">Token decimals</label>
+      <input type="number" id="tokenDecimals" placeholder="2" min="0" required>
+      <label for="tokenSupply">Total supply</label>
+      <input type="number" id="tokenSupply" placeholder="1000000" min="1" required>
+      <label for="tokenDescription">Token description</label>
+      <textarea id="tokenDescription" placeholder="e.g. A utility token for the BRO Builder platform."></textarea>
+      <label for="tokenThumbnail">Token thumbnail URL</label>
+      <input type="text" id="tokenThumbnail" placeholder="e.g. https://www.brobuilder.llc/images/token-thumbnail.png">
     </fieldset>
 
     <fieldset>
