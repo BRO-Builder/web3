@@ -3,8 +3,8 @@ import { Parser } from "@taquito/michel-codec";
 import { BeaconWallet } from "@taquito/beacon-wallet";
 
 const RPCS = {
-  mainnet: "https://mainnet.api.tez.ie",
-  ghostnet: "https://ghostnet.ecadinfra.com",
+  mainnet: "https://tezos-mainnet.octez.io",
+  ghostnet: "https://rpc.ghostnet.teztnets.com",
 };
 
 const TZ_FILE_URL = "https://static.eidoriantan.com/contracts/FA2.tz";

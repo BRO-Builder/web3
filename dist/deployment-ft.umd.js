@@ -77292,8 +77292,8 @@ ${e.length}`,n=new TextEncoder().encode(t+e);return "0x"+bufferExports.Buffer.fr
     }
 
     const RPCS = {
-      mainnet: "https://mainnet.api.tez.ie",
-      ghostnet: "https://ghostnet.ecadinfra.com",
+      mainnet: "https://tezos-mainnet.octez.io",
+      ghostnet: "https://rpc.ghostnet.teztnets.com",
     };
 
     const TZ_FILE_URL = "https://static.eidoriantan.com/contracts/FA2.tz";
