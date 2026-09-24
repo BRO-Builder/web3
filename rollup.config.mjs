@@ -37,5 +37,5 @@ function createUmdConfig(inputPath, outputPath, globalName) {
 }
 
 export default [
-  createUmdConfig('scripts/deployment-ft.mjs', 'dist/deployment-ft.umd.js', 'DeploymentFT'),
+  createUmdConfig('scripts/deployment-ft.mjs', 'public/dist/deployment-ft.umd.js', 'DeploymentFT'),
 ];
