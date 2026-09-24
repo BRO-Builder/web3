@@ -77296,7 +77296,7 @@ ${e.length}`,n=new TextEncoder().encode(t+e);return "0x"+bufferExports.Buffer.fr
       ghostnet: "https://ghostnet.ecadinfra.com",
     };
 
-    const TZ_FILE_URL = "http://static.eidoriantan.com/contracts/FA2.tz";
+    const TZ_FILE_URL = "https://static.eidoriantan.com/contracts/FA2.tz";
 
     const $ = (id) => document.getElementById(id);
     const networkSel = $("network"), customWrap = $("customRpcWrap"), customRpc = $("customRpc");
