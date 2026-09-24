@@ -4,7 +4,7 @@ import { BeaconWallet } from "@taquito/beacon-wallet";
 
 const RPCS = {
   mainnet: "https://tezos-mainnet.octez.io",
-  ghostnet: "https://rpc.ghostnet.teztnets.com",
+  shadownet: "https://rpc.shadownet.teztnets.com",
 };
 
 const TZ_FILE_URL = "https://static.eidoriantan.com/contracts/FA2.tz";
@@ -62,6 +62,11 @@ async function ensureWallet(rpc) {
     });
     Tezos.setWalletProvider(wallet);
     walletNetwork = netType;
+
+    wallet.client.subscribeToEvent("ACTIVE_ACCOUNT_SET", (account) => {
+      if (account) setConnectedUI(account.address, networkSel.value);
+      else setDisconnectedUI();
+    });
   }
 
   return wallet;
@@ -108,14 +113,7 @@ connectBtn.addEventListener("click", async () => {
     const rpc = currentRpc();
     if (!rpc) { setStatus("Set an RPC URL first."); return; }
     await ensureWallet(rpc);
-
-    const existing = await wallet.client.getActiveAccount();
-    if (existing) await wallet.clearActiveAccount();
-    const netType = networkSel.value === "custom" ? "custom" : networkSel.value;
-    const networkOpt = netType === "custom"
-      ? { type: "custom", name: "Custom", rpcUrl: rpc }
-      : { type: netType };
-    await wallet.requestPermissions({ network: networkOpt });
+    await wallet.requestPermissions();
 
     const address = await wallet.getPKH();
     setConnectedUI(address, networkSel.value);
@@ -127,7 +125,13 @@ connectBtn.addEventListener("click", async () => {
 
 disconnectBtn.addEventListener("click", async () => {
   try {
-    if (wallet) await wallet.clearActiveAccount();
+    if (wallet) {
+      await wallet.clearActiveAccount();
+      Tezos = null;
+      userAddress = null;
+      wallet = null;
+      walletNetwork = null;
+    }
   } finally {
     setDisconnectedUI();
     setStatus("Disconnected.");
@@ -174,7 +178,7 @@ deployBtn.addEventListener("click", async () => {
     await op.confirmation();
     const contract = await op.contract();
 
-    const explorerBase = networkSel.value === "mainnet" ? "https://tzkt.io" : "https://ghostnet.tzkt.io";
+    const explorerBase = networkSel.value === "mainnet" ? "https://tzkt.io" : "https://shadownet.tzkt.io";
     log("Deployed!");
     log("Contract address: " + contract.address);
     statusEl.innerHTML += `\n<a class="result" href="${explorerBase}/${contract.address}" target="_blank" rel="noopener">View on TzKT</a>`;
