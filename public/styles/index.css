@@ -1,0 +1,119 @@
+:root {
+  --navy: #101b2d;
+  --navy-2: #16243b;
+  --amber: #e8971e;
+  --amber-dark: #c97e14;
+  --paper: #f6f5f2;
+  --line: #22334d;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', -apple-system, sans-serif;
+  background: var(--paper);
+  color: #1c1c1c;
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+header {
+  background: var(--navy);
+  padding: 18px 24px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border-bottom: 4px solid var(--amber);
+}
+
+header img {
+  height: 42px;
+}
+
+header .tag {
+  color: #b9c3d4;
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-left: auto;
+  text-align: right;
+}
+
+main {
+  flex: 1;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 60px 20px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+h1 {
+  font-family: 'Oswald', sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  font-size: 1.8rem;
+  color: var(--navy);
+  margin-bottom: 6px;
+}
+
+p.sub {
+  color: #5a5f68;
+  margin-top: 0;
+  margin-bottom: 32px;
+}
+
+.card {
+  background: #fff;
+  border: 1px solid #ddd9d0;
+  border-left: 4px solid var(--amber);
+  border-radius: 4px;
+  padding: 22px 24px;
+}
+
+.card h2 {
+  font-family: 'Oswald', sans-serif;
+  text-transform: uppercase;
+  font-size: 1rem;
+  letter-spacing: 0.05em;
+  color: var(--navy);
+  margin: 0 0 6px;
+}
+
+.card p {
+  color: #5a5f68;
+  margin: 0 0 16px;
+  font-size: 0.92rem;
+}
+
+a.button {
+  display: inline-block;
+  padding: 11px 20px;
+  border-radius: 4px;
+  background: var(--amber);
+  color: var(--navy);
+  font-family: 'Oswald', sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+a.button:hover {
+  background: var(--amber-dark);
+}
+
+footer {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 16px 20px 24px;
+  border-top: 1px solid #ddd9d0;
+  font-size: 0.75rem;
+  color: #8a8f98;
+}
