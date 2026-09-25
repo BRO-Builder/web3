@@ -3,7 +3,7 @@ import { Parser } from "@taquito/michel-codec";
 import { BeaconWallet } from "@taquito/beacon-wallet";
 
 const RPCS = {
-  mainnet: "https://tezos-mainnet.octez.io",
+  mainnet: "https://rpc.tzkt.io/mainnet",
   shadownet: "https://rpc.shadownet.teztnets.com",
 };
 
