@@ -2,15 +2,10 @@ import { TezosToolkit, MichelsonMap } from "@taquito/taquito";
 import { Parser } from "@taquito/michel-codec";
 import { BeaconWallet } from "@taquito/beacon-wallet";
 
-const RPCS = {
-  mainnet: "https://rpc.tzkt.io/mainnet",
-  shadownet: "https://rpc.shadownet.teztnets.com",
-};
-
 const TZ_FILE_URL = "https://static.eidoriantan.com/contracts/brotoken.tz";
 
 const $ = (id) => document.getElementById(id);
-const networkSel = $("network"), customWrap = $("customRpcWrap"), customRpc = $("customRpc");
+const networkSel = $("network");
 const connectBtn = $("connectBtn"), disconnectBtn = $("disconnectBtn"), walletInfo = $("walletInfo");
 const deployBtn = $("deployBtn"), statusEl = $("status");
 const contractCodeEl = $("contractCode"), reloadCodeBtn = $("reloadCodeBtn"), codeSpinnerRow = $("codeSpinnerRow");
@@ -20,11 +15,6 @@ let walletNetwork = null;
 
 function log(msg) { statusEl.textContent += "\n" + msg; statusEl.scrollTop = statusEl.scrollHeight; }
 function setStatus(msg) { statusEl.textContent = msg; }
-function currentRpc() { return networkSel.value === "custom" ? customRpc.value.trim() : RPCS[networkSel.value]; }
-
-networkSel.addEventListener("change", () => {
-  customWrap.style.display = networkSel.value === "custom" ? "block" : "none";
-});
 
 function toHexBytes(str) {
   return Array.from(new TextEncoder().encode(str)).map(b => b.toString(16).padStart(2, "0")).join("");
@@ -46,20 +36,17 @@ function setDisconnectedUI() {
   deployBtn.disabled = true;
 }
 
-async function ensureWallet(rpc) {
-  if (!Tezos) Tezos = new TezosToolkit(rpc);
-  else Tezos.setRpcProvider(rpc);
+async function ensureWallet() {
+  if (!Tezos) Tezos = new TezosToolkit();
 
-  const netType = networkSel.value === "custom" ? "custom" : networkSel.value;
-  const networkOpt = netType === "custom"
-    ? { type: "custom", name: "Custom", rpcUrl: rpc }
-    : { type: netType };
-
+  const netType = networkSel.value;
   if (!wallet || walletNetwork !== netType) {
     wallet = new BeaconWallet({
       name: "BRO Builder FT Deploy",
-      network: networkOpt,
+      iconUrl: "https://www.brobuilder.llc/images/logo2.png",
+      network: { type: netType },
     });
+    await wallet.clearActiveAccount();
     Tezos.setWalletProvider(wallet);
     walletNetwork = netType;
 
@@ -93,28 +80,13 @@ async function loadContractCode() {
 
 reloadCodeBtn.addEventListener("click", loadContractCode);
 
-// On load: if Beacon already has an active session from a previous visit,
-// reflect that in the UI (including the ability to disconnect it). Also
-// fetch the compiled contract code from the source link.
-(async () => {
-  try {
-    const w = await ensureWallet(currentRpc());
-    const active = await w.client.getActiveAccount();
-    if (active) setConnectedUI(active.address, networkSel.value);
-  } catch (err) {
-    // no existing session, or storage unavailable — ignore
-  }
-  loadContractCode();
-})();
+loadContractCode();
 
 connectBtn.addEventListener("click", async () => {
   try {
     setStatus("Opening wallet connect...");
-    const rpc = currentRpc();
-    if (!rpc) { setStatus("Set an RPC URL first."); return; }
-    await ensureWallet(rpc);
+    await ensureWallet();
     await wallet.requestPermissions();
-
     const address = await wallet.getPKH();
     setConnectedUI(address, networkSel.value);
     setStatus("Wallet connected.");
@@ -125,13 +97,12 @@ connectBtn.addEventListener("click", async () => {
 
 disconnectBtn.addEventListener("click", async () => {
   try {
-    if (wallet) {
-      await wallet.clearActiveAccount();
-      Tezos = null;
-      userAddress = null;
-      wallet = null;
-      walletNetwork = null;
-    }
+    if (wallet) await wallet.clearActiveAccount();
+
+    Tezos = null;
+    userAddress = null;
+    wallet = null;
+    walletNetwork = null;
   } finally {
     setDisconnectedUI();
     setStatus("Disconnected.");
@@ -140,6 +111,7 @@ disconnectBtn.addEventListener("click", async () => {
 
 deployBtn.addEventListener("click", async () => {
   try {
+    await ensureWallet();
     const name = $("tokenName").value.trim();
     const symbol = $("tokenSymbol").value.trim();
     const decimals = parseInt($("tokenDecimals").value.trim(), 10);
