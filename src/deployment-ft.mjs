@@ -2,6 +2,11 @@ import { TezosToolkit, MichelsonMap } from "@taquito/taquito";
 import { Parser } from "@taquito/michel-codec";
 import { BeaconWallet } from "@taquito/beacon-wallet";
 
+const RPCs = [
+  { label: "Mainnet", value: "mainnet", rpc: "https://rpc.tzkt.io/mainnet" },
+  { label: "Shadownet", value: "shadownet", rpc: "https://rpc.tzkt.io/shadownet" },
+];
+
 const TZ_FILE_URL = "https://static.eidoriantan.com/contracts/brotoken.tz";
 
 const $ = (id) => document.getElementById(id);
@@ -37,7 +42,9 @@ function setDisconnectedUI() {
 }
 
 async function ensureWallet() {
-  if (!Tezos) Tezos = new TezosToolkit();
+  const rpc = RPCs.find(r => r.value === networkSel.value)?.rpc;
+  if (!Tezos) Tezos = new TezosToolkit(rpc);
+  else Tezos.setRpcProvider(rpc);
 
   const netType = networkSel.value;
   if (!wallet || walletNetwork !== netType) {
@@ -173,6 +180,7 @@ deployBtn.addEventListener("click", async () => {
     log("Contract address: " + contract.address);
     statusEl.innerHTML += `\n<a class="result" href="${explorerBase}/${contract.address}" target="_blank" rel="noopener">View on TzKT</a>`;
   } catch (err) {
+    console.error(err);
     log("Deploy failed: " + (err?.message || err));
   } finally {
     deployBtn.disabled = !userAddress;
