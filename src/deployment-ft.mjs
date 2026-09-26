@@ -4,6 +4,7 @@ import { BeaconWallet } from "@taquito/beacon-wallet";
 
 const RPCs = [
   { label: "Mainnet", value: "mainnet", rpc: "https://rpc.tzkt.io/mainnet" },
+  { label: "Ghostnet", value: "ghostnet", rpc: "https://rpc.tzkt.io/ghostnet" },
   { label: "Shadownet", value: "shadownet", rpc: "https://rpc.tzkt.io/shadownet" },
 ];
 
