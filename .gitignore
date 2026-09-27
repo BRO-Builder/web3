@@ -2,3 +2,11 @@
 
 node_modules/
 public/dist/
+build/
+
+.venv/
+venv/
+.python-version
+
+pyvenv.cfg
+pip-selfcheck.json

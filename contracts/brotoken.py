@@ -5,7 +5,7 @@ main = fa2.main
 
 @sp.module
 def brobuilder():
-  import main
+  import main # type: ignore
 
   class BROToken(
     main.Fungible,
@@ -33,7 +33,7 @@ def _total_supply(fa2_contract, args):
 @sp.add_test()
 def test():
   # Create and configure the test scenario
-  scenario = sp.test_scenario("fa2_lib_fungible", brobuilder)
+  scenario = sp.test_scenario("build/fa2_lib_fungible", brobuilder)
 
   owner_address = sp.address("tz1gxC2235naymQo8Rcyc4kwC4vaoXJrkz9R")
 
