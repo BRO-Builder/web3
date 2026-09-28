@@ -42,3 +42,13 @@ input.invalid {
   margin-top: 10px;
   word-break: break-all;
 }
+
+input[readonly] {
+  background: #f2f1ee;
+  color: #444;
+}
+
+input:disabled {
+  background: #f2f1ee;
+  cursor: not-allowed;
+}
