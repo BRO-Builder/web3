@@ -1,5 +1,6 @@
 name = "brobuilder-contracts"
 compatibility_date = "2026-09-25"
+workers_dev = false
 
 [assets]
 directory = "./public"
