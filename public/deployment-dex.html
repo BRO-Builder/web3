@@ -3,11 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Deploy FT Contract | BRO Builder</title>
+  <title>Deploy DEX Contract | BRO Builder</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles/deployment-ft.css">
+  <link rel="stylesheet" href="/styles/deployment-dex.css">
 </head>
 
 <body>
@@ -19,8 +20,8 @@
   </header>
 
   <main>
-    <h1>Deploy FT (FA2) Contract</h1>
-    <p class="sub">Connect a wallet, pick a network, paste your compiled Michelson (.tz) code, and originate.</p>
+    <h1>Deploy Token &harr; XTZ DEX Contract</h1>
+    <p class="sub">Connect a wallet, pick a network, configure the pool, and originate the constant-product DEX.</p>
 
     <fieldset>
       <legend>1. Network</legend>
@@ -42,19 +43,22 @@
     </fieldset>
 
     <fieldset>
-      <legend>3. Token Details</legend>
-      <label for="tokenName">Token name</label>
-      <input type="text" id="tokenName" placeholder="e.g. BRO Builder Token" required>
-      <label for="tokenSymbol">Token symbol</label>
-      <input type="text" id="tokenSymbol" placeholder="e.g. BRO" required>
-      <label for="tokenDecimals">Token decimals</label>
-      <input type="number" id="tokenDecimals" placeholder="2" min="0" required>
-      <label for="tokenSupply">Total supply</label>
-      <input type="number" id="tokenSupply" placeholder="1000000" min="1" required>
-      <label for="tokenDescription">Token description</label>
-      <textarea id="tokenDescription" placeholder="e.g. A utility token for the BRO Builder platform."></textarea>
-      <label for="tokenThumbnail">Token thumbnail URL</label>
-      <input type="text" id="tokenThumbnail" placeholder="e.g. https://www.brobuilder.llc/images/token-thumbnail.png">
+      <legend>3. DEX Configuration</legend>
+
+      <label for="tokenAddress">Token contract address (FA2)</label>
+      <input type="text" id="tokenAddress" placeholder="KT1..." autocomplete="off" spellcheck="false" required>
+      <p class="hint">The FA2 contract whose token will be paired with XTZ.</p>
+
+      <label for="tokenId">Token ID</label>
+      <input type="number" id="tokenId" value="0" min="0" required>
+
+      <label for="feeBps">Swap fee (basis points)</label>
+      <input type="number" id="feeBps" value="30" min="0" max="10000" required>
+      <p class="hint">100 bps = 1%. The fee stays in the pool and accrues to liquidity providers when they redeem their shares.</p>
+
+      <label for="adminAddress">Admin address</label>
+      <input type="text" id="adminAddress" placeholder="Defaults to the connected wallet" autocomplete="off" spellcheck="false">
+      <p class="hint">Can change the fee and transfer admin rights.</p>
     </fieldset>
 
     <fieldset>
@@ -70,6 +74,12 @@
       <textarea id="contractCode" placeholder="Contract code will be fetched automatically..." readonly></textarea>
     </fieldset>
 
+    <div class="note">
+      <strong>After deploying:</strong> the pool starts empty. Call <code>update_operators</code> on the token
+      contract to authorize the DEX, then call <code>initialize_pool</code> (sending XTZ) to seed liquidity.
+      <a href="/deployment-dex-setup.html">Open the pool setup page &rarr;</a>
+    </div>
+
     <button id="deployBtn" class="deploy" disabled>Deploy Contract</button>
 
     <h3>Status</h3>
@@ -80,6 +90,6 @@
     BRO Builder LLC &mdash; deployment tool for internal / partner use.
   </footer>
 
-  <script src="/dist/deployment-ft.umd.js"></script>
+  <script src="/dist/deployment-dex.umd.js"></script>
 </body>
 </html>

@@ -1,0 +1,44 @@
+/* Additions on top of deployment-ft.css */
+
+p.hint {
+  font-size: 0.75rem;
+  color: #8a8f98;
+  margin: 4px 0 0;
+}
+
+.note {
+  background: #fff8ec;
+  border: 1px solid #f0d9b0;
+  border-left: 4px solid var(--amber);
+  border-radius: 4px;
+  padding: 12px 16px;
+  margin-bottom: 20px;
+  font-size: 0.85rem;
+  color: #5a4a2a;
+}
+
+.note code {
+  font-family: ui-monospace, monospace;
+  font-size: 0.8rem;
+  background: rgba(0, 0, 0, 0.06);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+input.invalid {
+  border-color: var(--err);
+}
+
+.note a {
+  color: var(--amber-dark);
+  font-weight: 700;
+}
+
+.info {
+  white-space: pre-wrap;
+  font-family: ui-monospace, monospace;
+  font-size: 0.78rem;
+  color: #444;
+  margin-top: 10px;
+  word-break: break-all;
+}

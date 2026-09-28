@@ -38,4 +38,6 @@ function createUmdConfig(inputPath, outputPath, globalName) {
 
 export default [
   createUmdConfig('src/deployment-ft.mjs', 'public/dist/deployment-ft.umd.js', 'DeploymentFT'),
+  createUmdConfig('src/deployment-dex.mjs', 'public/dist/deployment-dex.umd.js', 'DeploymentDEX'),
+  createUmdConfig('src/deployment-dex-setup.mjs', 'public/dist/deployment-dex-setup.umd.js', 'DeploymentDEXSetup'),
 ];
