@@ -117,3 +117,65 @@ footer {
   font-size: 0.75rem;
   color: #8a8f98;
 }
+
+main.wide {
+  max-width: 1040px;
+}
+
+.section-title {
+  font-family: 'Oswald', sans-serif;
+  text-transform: uppercase;
+  font-size: 0.95rem;
+  letter-spacing: 0.05em;
+  color: var(--navy, #101b2d);
+  margin: 32px 0 14px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #ddd9d0;
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 20px;
+}
+
+/* Equal-height cards with the button pinned to the bottom */
+.card-grid .card {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  height: 100%;
+  background: #fff;
+  border: 1px solid #ddd9d0;
+  border-left: 4px solid var(--amber, #e8971e);
+  border-radius: 4px;
+  padding: 20px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.card-grid .card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 20px rgba(16, 27, 45, 0.12);
+}
+
+.card-grid .card h2 {
+  margin: 0 0 8px;
+  font-size: 1.05rem;
+}
+
+.card-grid .card p {
+  flex: 1;
+  margin: 0 0 18px;
+  font-size: 0.9rem;
+  color: #5a5f68;
+}
+
+.card-grid .card .button {
+  align-self: flex-start;
+}
+
+@media (max-width: 600px) {
+  .card-grid {
+    grid-template-columns: 1fr;
+  }
+}

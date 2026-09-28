@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Liquidity | BRO Builder</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles/deployment-ft.css">
+  <link rel="stylesheet" href="/styles/deployment-dex.css">
+</head>
+
+<body>
+  <header>
+    <a href="/">
+      <img src="https://www.brobuilder.llc/images/logo2.png" alt="BRO Builder LLC">
+    </a>
+    <div class="tag">Web3 Portal</div>
+  </header>
+
+  <main>
+    <h1>Manage Liquidity</h1>
+    <p class="sub">Add liquidity to a DEX pool to earn its swap fees, or withdraw your share at any time.</p>
+
+    <fieldset>
+      <legend>1. Network</legend>
+      <label for="network">Network</label>
+      <select id="network">
+        <option value="shadownet" selected>ShadowNet (testnet)</option>
+        <option value="ghostnet">Ghostnet (testnet)</option>
+        <option value="mainnet">Mainnet</option>
+      </select>
+    </fieldset>
+
+    <fieldset>
+      <legend>2. Wallet</legend>
+      <div class="row">
+        <button id="connectBtn">Connect Wallet</button>
+        <button id="disconnectBtn" class="secondary" style="display:none;">Disconnect</button>
+      </div>
+      <div id="walletInfo"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>3. DEX Pool</legend>
+      <label for="dexAddress">DEX contract address</label>
+      <input type="text" id="dexAddress" placeholder="KT1..." autocomplete="off" spellcheck="false">
+      <div class="row" style="margin-top:10px;">
+        <button id="loadDexBtn" class="secondary" type="button">Load Pool</button>
+      </div>
+      <div id="poolInfo" class="info"></div>
+      <div id="positionInfo" class="info"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>4. Slippage</legend>
+      <label for="slippage">Slippage tolerance (%)</label>
+      <input type="number" id="slippage" value="0.5" min="0" max="50" step="0.1">
+    </fieldset>
+
+    <fieldset>
+      <legend>5. Add Liquidity</legend>
+      <label for="addXtz">XTZ to deposit</label>
+      <input type="text" id="addXtz" inputmode="decimal" placeholder="0.0" autocomplete="off" disabled>
+      <p class="hint">The matching amount of tokens is pulled from your wallet at the current pool ratio.</p>
+      <div id="addQuote" class="info"></div>
+
+      <label style="display:flex; gap:8px; align-items:center; font-weight:500;">
+        <input type="checkbox" id="authorizeCheck" checked style="width:auto;">
+        Authorize the DEX as operator in the same transaction
+      </label>
+      <p class="hint">Required once so the DEX can pull your tokens. Untick it if you already authorized it.</p>
+
+      <button id="addBtn" disabled>Add Liquidity</button>
+    </fieldset>
+
+    <fieldset>
+      <legend>6. Remove Liquidity</legend>
+      <label for="removeShares">Shares to redeem</label>
+      <input type="text" id="removeShares" inputmode="numeric" placeholder="0" autocomplete="off" disabled>
+      <div class="row" style="margin-top:8px;">
+        <button class="secondary pct" type="button" data-pct="25" style="padding:6px 12px; font-size:0.75rem;" disabled>25%</button>
+        <button class="secondary pct" type="button" data-pct="50" style="padding:6px 12px; font-size:0.75rem;" disabled>50%</button>
+        <button class="secondary pct" type="button" data-pct="75" style="padding:6px 12px; font-size:0.75rem;" disabled>75%</button>
+        <button class="secondary pct" type="button" data-pct="100" style="padding:6px 12px; font-size:0.75rem;" disabled>Max</button>
+      </div>
+      <div id="removeQuote" class="info"></div>
+      <button id="removeBtn" disabled style="margin-top:12px;">Remove Liquidity</button>
+    </fieldset>
+
+    <h3>Status</h3>
+    <div id="status">Idle.</div>
+  </main>
+
+  <footer>
+    BRO Builder LLC &mdash; tools for internal / partner use.
+  </footer>
+
+  <script src="/dist/liquidity-dex.umd.js"></script>
+</body>
+</html>

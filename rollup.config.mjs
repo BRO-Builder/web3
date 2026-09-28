@@ -41,4 +41,5 @@ export default [
   createUmdConfig('src/deployment-dex.mjs', 'public/dist/deployment-dex.umd.js', 'DeploymentDEX'),
   createUmdConfig('src/deployment-dex-setup.mjs', 'public/dist/deployment-dex-setup.umd.js', 'DeploymentDEXSetup'),
   createUmdConfig('src/exchange-dex.mjs', 'public/dist/exchange-dex.umd.js', 'ExchangeDEX'),
+  createUmdConfig('src/liquidity-dex.mjs', 'public/dist/liquidity-dex.umd.js', 'LiquidityDEX'),
 ];
