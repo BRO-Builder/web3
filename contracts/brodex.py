@@ -23,6 +23,8 @@ import smartpy as sp
 
 @sp.module
 def t():
+  metadata: type = sp.big_map[sp.string, sp.bytes]
+
   tx: type = sp.record(
     to_=sp.address,
     token_id=sp.nat,
@@ -45,7 +47,8 @@ def main():
   class BRODex(sp.Contract):
     """Constant-product AMM trading a single-asset FA2 token against XTZ."""
 
-    def __init__(self, admin, token_address, token_id, fee_bps):
+    def __init__(self, contract_metadata, admin, token_address, token_id, fee_bps):
+      self.data.metadata = sp.cast(contract_metadata, t.metadata)
       self.data.admin = admin
       self.data.token_address = token_address
       self.data.token_id = sp.cast(token_id, sp.nat)
@@ -289,6 +292,7 @@ def test():
   scenario += token
 
   dex = main.BRODex(
+    contract_metadata=sp.big_map(),
     admin=admin.address,
     token_address=token.address,
     token_id=0,

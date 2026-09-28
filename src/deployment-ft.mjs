@@ -2,6 +2,8 @@ import { TezosToolkit, MichelsonMap } from "@taquito/taquito";
 import { Parser } from "@taquito/michel-codec";
 import { BeaconWallet } from "@taquito/beacon-wallet";
 
+import { toHexBytes } from "./default.mjs";
+
 const RPCs = [
   { label: "Mainnet", value: "mainnet", rpc: "https://rpc.tzkt.io/mainnet" },
   { label: "Ghostnet", value: "ghostnet", rpc: "https://rpc.tzkt.io/ghostnet" },
@@ -21,10 +23,6 @@ let walletNetwork = null;
 
 function log(msg) { statusEl.textContent += "\n" + msg; statusEl.scrollTop = statusEl.scrollHeight; }
 function setStatus(msg) { statusEl.textContent = msg; }
-
-function toHexBytes(str) {
-  return Array.from(new TextEncoder().encode(str)).map(b => b.toString(16).padStart(2, "0")).join("");
-}
 
 function setConnectedUI(address, networkLabel) {
   userAddress = address;

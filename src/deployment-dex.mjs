@@ -3,6 +3,8 @@ import { Parser } from "@taquito/michel-codec";
 import { BeaconWallet } from "@taquito/beacon-wallet";
 import { validateAddress, ValidationResult } from "@taquito/utils";
 
+import { toHexBytes } from "./default.mjs";
+
 const RPCs = [
   { label: "Mainnet", value: "mainnet", rpc: "https://rpc.tzkt.io/mainnet", explorer: "https://tzkt.io" },
   { label: "Ghostnet", value: "ghostnet", rpc: "https://rpc.tzkt.io/ghostnet", explorer: "https://ghostnet.tzkt.io" },
@@ -159,7 +161,11 @@ deployBtn.addEventListener("click", async () => {
     const parser = new Parser();
     const contractCode = parser.parseScript(code);
 
+    const contractMetadata = new MichelsonMap();
+    contractMetadata.set("", toHexBytes("https://brobuilder.llc/token-metadata-DEX.json"));
+
     const storage = {
+      metadata: contractMetadata,
       admin,
       fee_bps: feeBps,
       shares: new MichelsonMap(),
