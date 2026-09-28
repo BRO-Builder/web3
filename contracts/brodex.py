@@ -10,6 +10,8 @@ official FA2 library (https://smartpy.tezos.com/manual/libraries/FA2-lib).
   reserves, but the output is computed from the fee-adjusted input.
   This grows k over time, so the fee accrues to liquidity providers
   when they redeem their shares.
+- Admin can pause the contract, disabling initialize_pool, add_liquidity,
+  remove_liquidity, xtz_to_token, and token_to_xtz.
 - Interacts with a paired FA2 single-asset (or any single-token-id FA2)
   contract using the standard batched `transfer` entrypoint. Traders and
   liquidity providers must call `update_operators` on the token contract
@@ -53,6 +55,7 @@ def main():
       self.data.token_address = token_address
       self.data.token_id = sp.cast(token_id, sp.nat)
       self.data.fee_bps = sp.cast(fee_bps, sp.nat)
+      self.data.paused = False
       self.data.xtz_pool = sp.mutez(0)
       self.data.token_pool = sp.nat(0)
       self.data.total_shares = sp.nat(0)
@@ -93,12 +96,21 @@ def main():
       self.data.fee_bps = new_fee_bps
 
     @sp.entrypoint
+    def pause(self, new_paused):
+      """Admin-only switch. When paused, initialize_pool, add_liquidity,
+      remove_liquidity, xtz_to_token, and token_to_xtz are disabled."""
+      sp.cast(new_paused, sp.bool)
+      assert sp.sender == self.data.admin, "NOT_ADMIN"
+      self.data.paused = new_paused
+
+    @sp.entrypoint
     def initialize_pool(self, token_amount):
       """One-time bootstrap of the pool. Caller sends XTZ as the
       transaction amount and specifies how much token to seed it with.
       Requires the DEX to already be an operator for the caller's
       tokens (FA2 `update_operators`)."""
       sp.cast(token_amount, sp.nat)
+      assert not self.data.paused, "PAUSED"
       assert self.data.total_shares == 0, "ALREADY_INITIALIZED"
       assert sp.amount > sp.mutez(0), "NEED_XTZ"
       assert token_amount > 0, "NEED_TOKEN"
@@ -120,6 +132,7 @@ def main():
       via the FA2 contract's `transfer` entrypoint (requires the DEX
       to be a registered operator for the caller's tokens)."""
       sp.cast(min_shares, sp.nat)
+      assert not self.data.paused, "PAUSED"
       assert self.data.total_shares > 0, "POOL_NOT_INITIALIZED"
       assert sp.amount > sp.mutez(0), "NEED_XTZ"
 
@@ -148,6 +161,7 @@ def main():
         params,
         sp.record(shares=sp.nat, min_xtz=sp.mutez, min_token=sp.nat),
       )
+      assert not self.data.paused, "PAUSED"
       assert self.data.total_shares > 0, "POOL_NOT_INITIALIZED"
       user_shares = self.data.shares.get(sp.sender, default=0)
       assert user_shares >= params.shares, "INSUFFICIENT_SHARES"
@@ -176,6 +190,7 @@ def main():
       The full XTZ input joins the pool; the fee portion is simply not
       counted when pricing the output, so it stays in the reserves."""
       sp.cast(min_tokens_out, sp.nat)
+      assert not self.data.paused, "PAUSED"
       assert self.data.total_shares > 0, "POOL_NOT_INITIALIZED"
       assert sp.amount > sp.mutez(0), "NEED_XTZ"
 
@@ -202,6 +217,7 @@ def main():
       """Requires the DEX to be a registered operator for the caller's
       tokens (FA2 `update_operators`) so it can pull `token_amount`."""
       sp.cast(params, sp.record(token_amount=sp.nat, min_xtz_out=sp.mutez))
+      assert not self.data.paused, "PAUSED"
       assert self.data.total_shares > 0, "POOL_NOT_INITIALIZED"
       assert params.token_amount > 0, "NEED_TOKEN"
 
@@ -334,3 +350,28 @@ def test():
 
   # fee above 100% is rejected
   dex.set_fee(10_001, _sender=admin.address, _valid=False)
+
+  # non-admin cannot pause
+  dex.pause(True, _sender=alice.address, _valid=False)
+
+  # admin pauses the contract
+  dex.pause(True, _sender=admin.address)
+  scenario.verify(dex.data.paused)
+
+  # trading and liquidity entrypoints are disabled while paused
+  dex.xtz_to_token(0, _sender=bob.address, _amount=sp.tez(10), _valid=False)
+  dex.token_to_xtz(
+    sp.record(token_amount=100, min_xtz_out=sp.mutez(0)),
+    _sender=alice.address,
+    _valid=False,
+  )
+  dex.add_liquidity(0, _sender=bob.address, _amount=sp.tez(10), _valid=False)
+  dex.remove_liquidity(
+    sp.record(shares=1, min_xtz=sp.mutez(0), min_token=0),
+    _sender=admin.address,
+    _valid=False,
+  )
+
+  # admin unpauses and trading works again
+  dex.pause(False, _sender=admin.address)
+  dex.xtz_to_token(0, _sender=bob.address, _amount=sp.tez(10))

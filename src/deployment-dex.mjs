@@ -168,6 +168,7 @@ deployBtn.addEventListener("click", async () => {
       metadata: contractMetadata,
       admin,
       fee_bps: feeBps,
+      paused: false,
       shares: new MichelsonMap(),
       token_address: tokenAddress,
       token_id: tokenId,
