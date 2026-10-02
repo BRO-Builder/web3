@@ -93,7 +93,7 @@ function TokenFields({ values, onChange }: FieldSetProps) {
     <Field label="Token decimals">
       <TextInput type="number" value={values.decimals ?? ""} onChange={onChange("decimals")} min="0" />
     </Field>
-    <Field label="Total supply">
+    <Field label="Total supply (eg. 20000.123 for 20k tokens with 3 decimals)">
       <TextInput type="number" value={values.supply ?? ""} onChange={onChange("supply")} placeholder="1000000" min="0" step="any" />
     </Field>
     <Field label="Token description">
