@@ -16,6 +16,7 @@ import {
   getErrorMessage,
 } from "../shared/contracts";
 import { isValidAddress, useWallet } from "../shared/tezos";
+import { parseUnits } from "../shared/units";
 
 type DeploymentKind = "token" | "dex";
 type FormValues = Record<string, string>;
@@ -29,13 +30,15 @@ function validateTokenForm(values: FormValues) {
   const name = values.name?.trim();
   const symbol = values.symbol?.trim();
   const decimals = Number(values.decimals);
-  const supply = Number(values.supply);
+  const supply = name && symbol && Number.isInteger(decimals) && decimals >= 0
+    ? parseUnits(values.supply ?? "", decimals)
+    : null;
 
   if (!name || !symbol || !Number.isInteger(decimals) || decimals < 0) {
     return { error: "Enter a valid token name, symbol, and decimals." };
   }
-  if (!Number.isInteger(supply) || supply < 1) {
-    return { error: "Total supply must be a positive whole number." };
+  if (!supply || supply <= 0n) {
+    return { error: `Total supply must be positive and use at most ${decimals} decimal places.` };
   }
 
   return {
@@ -91,7 +94,7 @@ function TokenFields({ values, onChange }: FieldSetProps) {
       <TextInput type="number" value={values.decimals ?? ""} onChange={onChange("decimals")} min="0" />
     </Field>
     <Field label="Total supply">
-      <TextInput type="number" value={values.supply ?? ""} onChange={onChange("supply")} min="1" />
+      <TextInput type="number" value={values.supply ?? ""} onChange={onChange("supply")} min="0" step="any" />
     </Field>
     <Field label="Token description">
       <TextArea value={values.description ?? ""} onChange={onChange("description")} />

@@ -19,7 +19,7 @@ export function createTokenStorage(address: string, values: {
   name: string;
   symbol: string;
   decimals: number;
-  supply: number;
+  supply: bigint;
   description?: string;
   thumbnail?: string;
 }) {
@@ -34,9 +34,9 @@ export function createTokenStorage(address: string, values: {
   const tokenMetadata = new MichelsonMap();
   tokenMetadata.set(0, { token_id: 0, token_info: tokenInfo });
   const ledger = new MichelsonMap();
-  ledger.set({ 0: address, 1: 0 }, values.supply);
+  ledger.set({ 0: address, 1: 0 }, values.supply.toString());
   const supply = new MichelsonMap();
-  supply.set(0, values.supply);
+  supply.set(0, values.supply.toString());
   const metadata = new MichelsonMap();
   metadata.set("", toHexBytes("https://brobuilder.llc/token-metadata-BRO.json"));
 

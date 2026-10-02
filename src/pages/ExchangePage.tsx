@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { NetworkWallet, Page, Section, Status } from "../shared/Controls";
 import { getErrorMessage } from "../shared/contracts";
+import { fetchTokenMetadata } from "../shared/tokenMetadata";
 import { isValidAddress, useWallet } from "../shared/tezos";
 import { formatUnits, parseUnits, toBigInt } from "../shared/units";
 
@@ -49,12 +50,18 @@ export function ExchangePage() {
       const { toolkit } = await wallet.ensureWallet();
       const contract: any = await toolkit.wallet.at(address);
       const storage: any = await contract.storage();
+      const tokenId = storage.token_id.toString();
+      const token = await fetchTokenMetadata(
+        wallet.selected.api,
+        storage.token_address,
+        tokenId,
+      );
       const loadedPool: Pool = {
         address,
         contract,
-        token: { symbol: "TOKEN", decimals: 0 },
+        token,
         tokenAddress: storage.token_address,
-        tokenId: storage.token_id.toString(),
+        tokenId,
         xtzPool: toBigInt(storage.xtz_pool),
         tokenPool: toBigInt(storage.token_pool),
         initialized: !storage.total_shares.isZero(),

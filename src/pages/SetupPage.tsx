@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { NetworkWallet, Page, Section, Status } from "../shared/Controls";
 import { getErrorMessage } from "../shared/contracts";
+import { fetchTokenMetadata, type TokenMetadata } from "../shared/tokenMetadata";
+import { parseUnits } from "../shared/units";
 import { isValidAddress, useWallet } from "../shared/tezos";
 
  type Dex = {
@@ -8,13 +10,14 @@ import { isValidAddress, useWallet } from "../shared/tezos";
   contract: any;
   tokenAddress: string;
   tokenId: string;
+  token: TokenMetadata;
   initialized: boolean;
 };
 
 function DexInfo({ dex }: { dex: Dex | null }) {
   if (!dex) return null;
   return <div className="info">
-    {`Token contract: ${dex.tokenAddress}\nToken ID: ${dex.tokenId}\nPool: ${dex.initialized ? "already initialized" : "not initialized"}`}
+    {`Token: ${dex.token.symbol} (${dex.tokenAddress}, id ${dex.tokenId})\nPool: ${dex.initialized ? "already initialized" : "not initialized"}`}
   </div>;
 }
 
@@ -41,11 +44,18 @@ export function SetupPage() {
       log("Reading DEX storage...");
       const contract: any = await toolkit.wallet.at(address);
       const storage: any = await contract.storage();
+      const tokenId = storage.token_id.toString();
+      const token = await fetchTokenMetadata(
+        wallet.selected.api,
+        storage.token_address,
+        tokenId,
+      );
       setDex({
         address,
         contract,
         tokenAddress: storage.token_address,
-        tokenId: storage.token_id.toString(),
+        tokenId,
+        token,
         initialized: !storage.total_shares.isZero(),
       });
     } catch (error) {
@@ -77,15 +87,16 @@ export function SetupPage() {
 
   async function initializePool() {
     if (!dex || !wallet.address) return;
-    if (!/^[1-9]\d*$/.test(tokenAmount) || !(Number(xtzAmount) > 0)) {
-      log("Enter a positive token amount and XTZ amount.");
+    const tokenAmountInUnits = parseUnits(tokenAmount, dex.token.decimals);
+    if (!tokenAmountInUnits || tokenAmountInUnits <= 0n || !(Number(xtzAmount) > 0)) {
+      log(`Enter a positive ${dex.token.symbol} amount with at most ${dex.token.decimals} decimals and a positive XTZ amount.`);
       return;
     }
 
     try {
       await wallet.ensureWallet();
-      log(`Initializing pool with ${tokenAmount} tokens and ${xtzAmount} XTZ...`);
-      const operation = await dex.contract.methodsObject.initialize_pool(tokenAmount).send({ amount: xtzAmount });
+      log(`Initializing pool with ${tokenAmount} ${dex.token.symbol} and ${xtzAmount} XTZ...`);
+      const operation = await dex.contract.methodsObject.initialize_pool(tokenAmountInUnits.toString()).send({ amount: xtzAmount });
       log(`Op hash: ${operation.opHash}`);
       await operation.confirmation();
       setDex((current) => current ? { ...current, initialized: true } : current);
@@ -110,8 +121,8 @@ export function SetupPage() {
       <button disabled={!dex || !wallet.address} onClick={() => void authorizeDex()}>Authorize DEX</button>
     </Section>
     <Section title="5. Initialize Pool">
-      <label>Token amount (raw units)
-        <input type="number" value={tokenAmount} onChange={(event) => setTokenAmount(event.target.value)} min="1" />
+      <label>Token amount ({dex?.token.symbol ?? "token"})
+        <input type="number" value={tokenAmount} onChange={(event) => setTokenAmount(event.target.value)} min="0" step="any" />
       </label>
       <label>XTZ amount
         <input type="number" value={xtzAmount} onChange={(event) => setXtzAmount(event.target.value)} min="0" step="any" />
