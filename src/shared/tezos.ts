@@ -13,7 +13,7 @@ export function isValidAddress(value: string) {
   return validateAddress(value) === ValidationResult.VALID;
 }
 
-export function useWallet(name: string) {
+export function useWallet() {
   const [network, setNetwork] = useState("shadownet");
   const [address, setAddress] = useState<string | null>(null);
   const [tezos, setTezos] = useState<TezosToolkit | null>(null);
@@ -32,7 +32,11 @@ export function useWallet(name: string) {
     if (!toolkit) toolkit = new TezosToolkit(selected.rpc);
     else toolkit.setRpcProvider(selected.rpc);
     if (!beacon) {
-      beacon = new BeaconWallet({ name, iconUrl: "https://www.brobuilder.llc/images/logo2.png", network: { type: network as any } });
+      beacon = new BeaconWallet({
+        name: 'BRO Builder LLC Web3',
+        iconUrl: "https://www.brobuilder.llc/images/logo2.png",
+        network: { type: network as any }
+      });
       toolkit.setWalletProvider(beacon);
       setTezos(toolkit);
       setWallet(beacon);

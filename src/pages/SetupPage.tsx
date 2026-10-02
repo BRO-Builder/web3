@@ -22,7 +22,7 @@ function DexInfo({ dex }: { dex: Dex | null }) {
 }
 
 export function SetupPage() {
-  const wallet = useWallet("BRO Builder DEX Setup");
+  const wallet = useWallet();
   const [address, setAddress] = useState("");
   const [tokenAmount, setTokenAmount] = useState("");
   const [xtzAmount, setXtzAmount] = useState("");

@@ -27,7 +27,7 @@ function PoolDetails({ pool }: { pool: Pool | null }) {
 }
 
 export function ExchangePage() {
-  const wallet = useWallet("BRO Builder Exchange");
+  const wallet = useWallet();
   const [address, setAddress] = useState("");
   const [pool, setPool] = useState<Pool | null>(null);
   const [amount, setAmount] = useState("");

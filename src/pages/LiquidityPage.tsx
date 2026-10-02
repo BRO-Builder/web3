@@ -58,7 +58,7 @@ function calculateRemoveQuote(pool: Pool | null, value: string, slippage: string
 }
 
 export function LiquidityPage() {
-  const wallet = useWallet("BRO Builder Liquidity");
+  const wallet = useWallet();
   const [address, setAddress] = useState("");
   const [pool, setPool] = useState<Pool | null>(null);
   const [myShares, setMyShares] = useState(0n);

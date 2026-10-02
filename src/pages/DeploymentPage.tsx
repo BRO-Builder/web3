@@ -126,7 +126,7 @@ function DexFields({ values, onChange }: FieldSetProps) {
 }
 
 export function DeploymentPage({ kind }: { kind: DeploymentKind }) {
-  const wallet = useWallet(kind === "token" ? "BRO Builder FT Deploy" : "BRO Builder DEX Deploy");
+  const wallet = useWallet();
   const [code, setCode] = useState("");
   const [messages, setMessages] = useState(["Idle."]);
   const [values, setValues] = useState<FormValues>(DEFAULT_VALUES[kind]);
