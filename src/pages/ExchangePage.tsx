@@ -33,6 +33,7 @@ export function ExchangePage() {
   const [amount, setAmount] = useState("");
   const [slippage, setSlippage] = useState("0.5");
   const [reverse, setReverse] = useState(false);
+  const [authorizeOperator, setAuthorizeOperator] = useState(true);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [messages, setMessages] = useState(["Idle."]);
 
@@ -115,15 +116,37 @@ export function ExchangePage() {
     if (!quote || !pool || !wallet.address) return;
 
     try {
-      const operation = reverse
-        ? await pool.contract.methodsObject.token_to_xtz({
-            token_amount: quote.amountIn.toString(),
-            min_xtz_out: quote.minOut.toString(),
-          }).send()
-        : await pool.contract.methodsObject.xtz_to_token(quote.minOut.toString()).send({
-            amount: Number(quote.amountIn),
-            mutez: true,
-          });
+      const { toolkit } = await wallet.ensureWallet();
+      let operation;
+
+      if (reverse) {
+        const swapCall = pool.contract.methodsObject.token_to_xtz({
+          token_amount: quote.amountIn.toString(),
+          min_xtz_out: quote.minOut.toString(),
+        });
+
+        if (authorizeOperator) {
+          const token: any = await toolkit.wallet.at(pool.tokenAddress);
+          const authorizeCall = token.methodsObject.update_operators([{
+            add_operator: {
+              owner: wallet.address,
+              operator: pool.address,
+              token_id: pool.tokenId,
+            },
+          }]);
+          operation = await toolkit.wallet.batch()
+            .withContractCall(authorizeCall)
+            .withContractCall(swapCall)
+            .send();
+        } else {
+          operation = await swapCall.send();
+        }
+      } else {
+        operation = await pool.contract.methodsObject.xtz_to_token(quote.minOut.toString()).send({
+          amount: Number(quote.amountIn),
+          mutez: true,
+        });
+      }
 
       log(`Op hash: ${operation.opHash}`);
       await operation.confirmation();
@@ -150,18 +173,25 @@ export function ExchangePage() {
     </Section>
     <Section title="4. Swap">
       <label>You pay ({inputSymbol})
-        <input value={amount} onChange={(event) => setAmount(event.target.value)} disabled={!pool?.initialized} placeholder="0.0" />
+        <input value={amount} onChange={(event) => setAmount(event.target.value)} disabled={!pool?.initialized} placeholder="0.0" autoComplete="off" />
       </label>
       <button className="secondary" disabled={!pool?.initialized} onClick={() => { setReverse((current) => !current); setAmount(""); setQuote(null); }}>
         ↕ Flip direction
       </button>
       <label>You receive, estimated ({outputSymbol})
-        <input readOnly value={quote ? formatUnits(quote.out, outputDecimals) : ""} />
+        <input readOnly value={quote ? formatUnits(quote.out, outputDecimals) : ""} placeholder="0.0" />
       </label>
       <label>Slippage tolerance (%)
         <input type="number" value={slippage} onChange={(event) => setSlippage(event.target.value)} min="0" max="50" step="0.1" />
       </label>
       <div className="info">{quote ? `Minimum received: ${formatUnits(quote.minOut, outputDecimals)} ${outputSymbol}` : ""}</div>
+      {reverse && <>
+        <label style={{ display: "flex", gap: "8px", alignItems: "center", fontWeight: 500 }}>
+          <input type="checkbox" checked={authorizeOperator} onChange={(event) => setAuthorizeOperator(event.target.checked)} style={{ width: "auto" }} />
+          Authorize the DEX as operator in the same transaction
+        </label>
+        <p className="hint">Required once so the DEX can pull your tokens. Untick it if you already authorized it.</p>
+      </>}
       <button className="deploy" disabled={!quote || !wallet.address} onClick={() => void swap()}>Swap</button>
     </Section>
     <Status messages={messages} />

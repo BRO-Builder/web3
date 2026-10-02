@@ -57,6 +57,6 @@ export function ContractCode({ url, value, onChange }: { url: string; value: str
       <button type="button" className="secondary small" onClick={() => void load()} disabled={loading}>Reload</button>
     </div>
     {loading && <p className="hint">Fetching contract code...</p>}
-    <textarea id="contractCode" value={value} onChange={(event) => onChange(event.target.value)} readOnly />
+    <textarea id="contractCode" value={value} onChange={(event) => onChange(event.target.value)} placeholder="Contract code will be fetched automatically..." readOnly />
   </>;
 }

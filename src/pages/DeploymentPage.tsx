@@ -94,13 +94,13 @@ function TokenFields({ values, onChange }: FieldSetProps) {
       <TextInput type="number" value={values.decimals ?? ""} onChange={onChange("decimals")} min="0" />
     </Field>
     <Field label="Total supply">
-      <TextInput type="number" value={values.supply ?? ""} onChange={onChange("supply")} min="0" step="any" />
+      <TextInput type="number" value={values.supply ?? ""} onChange={onChange("supply")} placeholder="1000000" min="0" step="any" />
     </Field>
     <Field label="Token description">
-      <TextArea value={values.description ?? ""} onChange={onChange("description")} />
+      <TextArea value={values.description ?? ""} onChange={onChange("description")} placeholder="e.g. A utility token for the BRO Builder platform." />
     </Field>
     <Field label="Token thumbnail URL">
-      <TextInput value={values.thumbnail ?? ""} onChange={onChange("thumbnail")} />
+      <TextInput value={values.thumbnail ?? ""} onChange={onChange("thumbnail")} placeholder="e.g. https://www.brobuilder.llc/images/token-thumbnail.png" />
     </Field>
   </>;
 }
@@ -109,15 +109,18 @@ function DexFields({ values, onChange }: FieldSetProps) {
   return <>
     <Field label="Token contract address">
       <TextInput value={values.tokenAddress ?? ""} onChange={onChange("tokenAddress")} placeholder="KT1..." />
+      <p className="hint">The FA2 contract whose token will be paired with XTZ.</p>
     </Field>
     <Field label="Token ID">
       <TextInput type="number" value={values.tokenId ?? "0"} onChange={onChange("tokenId")} min="0" />
     </Field>
     <Field label="Swap fee (basis points)">
       <TextInput type="number" value={values.feeBps ?? "30"} onChange={onChange("feeBps")} min="0" max="10000" />
+      <p className="hint">100 bps = 1%. The fee stays in the pool and accrues to liquidity providers when they redeem their shares.</p>
     </Field>
     <Field label="Admin address">
-      <TextInput value={values.adminAddress ?? ""} onChange={onChange("adminAddress")} placeholder="Defaults to connected wallet" />
+      <TextInput value={values.adminAddress ?? ""} onChange={onChange("adminAddress")} placeholder="Defaults to the connected wallet" />
+      <p className="hint">Can change the fee and transfer admin rights.</p>
     </Field>
   </>;
 }
@@ -199,7 +202,9 @@ export function DeploymentPage({ kind }: { kind: DeploymentKind }) {
 
   return <Page
     title={isToken ? "Deploy FT (FA2) Contract" : "Deploy Token <-> XTZ DEX Contract"}
-    subtitle="Connect a wallet, pick a network, configure the contract, and originate it on Tezos."
+    subtitle={isToken
+      ? "Connect a wallet, pick a network, paste your compiled Michelson (.tz) code, and originate."
+      : "Connect a wallet, pick a network, configure the pool, and originate the constant-product DEX."}
   >
     <NetworkWallet wallet={wallet} />
     <Section title={isToken ? "3. Token Details" : "3. DEX Configuration"}>
@@ -210,6 +215,9 @@ export function DeploymentPage({ kind }: { kind: DeploymentKind }) {
     <Section title="4. Compiled Contract (.tz Michelson)">
       <ContractCode url={CONTRACT_CODE_URLS[kind]} value={code} onChange={setCode} />
     </Section>
+    {!isToken && <div className="note">
+      <strong>After deploying:</strong> the pool starts empty. Call <code>update_operators</code> on the token contract to authorize the DEX, then call <code>initialize_pool</code> (sending XTZ) to seed liquidity. <a href="/deployment-dex-setup.html">Open the pool setup page &rarr;</a>
+    </div>}
     <button className="deploy" disabled={!wallet.address} onClick={() => void deploy()}>
       Deploy Contract
     </button>

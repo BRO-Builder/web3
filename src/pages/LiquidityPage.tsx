@@ -65,6 +65,7 @@ export function LiquidityPage() {
   const [addXtz, setAddXtz] = useState("");
   const [removeShares, setRemoveShares] = useState("");
   const [slippage, setSlippage] = useState("0.5");
+  const [authorizeOperator, setAuthorizeOperator] = useState(true);
   const [messages, setMessages] = useState(["Idle."]);
 
   const addQuote = useMemo(() => calculateAddQuote(pool, addXtz, slippage), [pool, addXtz, slippage]);
@@ -128,10 +129,26 @@ export function LiquidityPage() {
     if (!pool || !addQuote || !wallet.address) return;
 
     try {
-      const operation = await pool.contract.methodsObject.add_liquidity(addQuote.minShares.toString()).send({
-        amount: Number(addQuote.xtzIn),
-        mutez: true,
-      });
+      const { toolkit } = await wallet.ensureWallet();
+      const addCall = pool.contract.methodsObject.add_liquidity(addQuote.minShares.toString());
+      let operation;
+
+      if (authorizeOperator) {
+        const token: any = await toolkit.wallet.at(pool.tokenAddress);
+        const authorizeCall = token.methodsObject.update_operators([{
+          add_operator: {
+            owner: wallet.address,
+            operator: pool.address,
+            token_id: pool.tokenId,
+          },
+        }]);
+        operation = await toolkit.wallet.batch()
+          .withContractCall(authorizeCall)
+          .withTransfer(addCall.toTransferParams({ amount: Number(addQuote.xtzIn), mutez: true }))
+          .send();
+      } else {
+        operation = await addCall.send({ amount: Number(addQuote.xtzIn), mutez: true });
+      }
       log(`Op hash: ${operation.opHash}`);
       await operation.confirmation();
       log("Liquidity added.");
@@ -175,6 +192,12 @@ export function LiquidityPage() {
       <label>XTZ to deposit
         <input value={addXtz} onChange={(event) => setAddXtz(event.target.value)} disabled={!pool?.initialized} placeholder="0.0" />
       </label>
+      <p className="hint">The matching amount of tokens is pulled from your wallet at the current pool ratio.</p>
+      <label style={{ display: "flex", gap: "8px", alignItems: "center", fontWeight: 500 }}>
+        <input type="checkbox" checked={authorizeOperator} onChange={(event) => setAuthorizeOperator(event.target.checked)} style={{ width: "auto" }} />
+        Authorize the DEX as operator in the same transaction
+      </label>
+      <p className="hint">Required once so the DEX can pull your tokens. Untick it if you already authorized it.</p>
       <div className="info">{addQuote ? `You will deposit: ${formatUnits(addQuote.tokenIn, pool?.token.decimals ?? 0)} ${pool?.token.symbol}\nYou will receive: ${addQuote.shares} shares (minimum ${addQuote.minShares})` : ""}</div>
       <button disabled={!addQuote || !wallet.address} onClick={() => void addLiquidity()}>Add Liquidity</button>
     </Section>

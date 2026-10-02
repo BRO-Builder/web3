@@ -117,16 +117,18 @@ export function SetupPage() {
       <DexInfo dex={dex} />
     </Section>
     <Section title="4. Authorize DEX (update_operators)">
-      <p className="hint">Lets the DEX pull your tokens from your wallet for this pool.</p>
+      <p className="hint">Lets the DEX pull your tokens. Calls <code>update_operators</code> on the token contract, adding the DEX as an operator of your wallet for the DEX's token ID.</p>
       <button disabled={!dex || !wallet.address} onClick={() => void authorizeDex()}>Authorize DEX</button>
     </Section>
     <Section title="5. Initialize Pool">
       <label>Token amount ({dex?.token.symbol ?? "token"})
         <input type="number" value={tokenAmount} onChange={(event) => setTokenAmount(event.target.value)} min="0" step="any" />
       </label>
+      <p className="hint">Enter the token amount using its displayed decimals. Your wallet must hold at least this much.</p>
       <label>XTZ amount
         <input type="number" value={xtzAmount} onChange={(event) => setXtzAmount(event.target.value)} min="0" step="any" />
       </label>
+      <p className="hint">Sent with the call. The opening price is XTZ divided by tokens, and you receive shares equal to the token amount. This can only be done once.</p>
       <button disabled={!dex || dex.initialized || !wallet.address} onClick={() => void initializePool()}>Initialize Pool</button>
     </Section>
     <Status messages={messages} />
