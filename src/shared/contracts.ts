@@ -3,6 +3,7 @@ import { MichelsonMap } from "@taquito/taquito";
 export const CONTRACT_CODE_URLS = {
   token: "https://static.eidoriantan.com/contracts/brotoken.tz",
   dex: "https://static.eidoriantan.com/contracts/brodex.tz",
+  delegator: "https://static.eidoriantan.com/contracts/brodelegator.tz",
 } as const;
 
 export function toHexBytes(value: string) {
@@ -43,12 +44,40 @@ export function createTokenStorage(address: string, values: {
   return { ledger, metadata, next_token_id: 1, operators: new MichelsonMap(), supply, token_metadata: tokenMetadata };
 }
 
-export function createDexStorage(tokenAddress: string, tokenId: number, feeBps: number, admin: string) {
+export function createDelegatorStorage(admin: string, quorumBps: number) {
+  const metadata = new MichelsonMap();
+  metadata.set("", toHexBytes("https://brobuilder.llc/token-metadata-DELEGATOR.json"));
+
+  const shares = new MichelsonMap();
+  const votes = new MichelsonMap();
+  const tally = new MichelsonMap();
+  return {
+    metadata,
+    admin,
+    dex: null,
+    quorum_bps: quorumBps,
+    accounted: 0,
+    total_shares: 0,
+    shares,
+    votes,
+    tally,
+    delegate: null,
+  };
+}
+
+export function createDexStorage(
+  tokenAddress: string,
+  tokenId: number,
+  feeBps: number,
+  vault: string,
+  admin: string,
+) {
   const metadata = new MichelsonMap();
   metadata.set("", toHexBytes("https://brobuilder.llc/token-metadata-DEX.json"));
   return {
     metadata,
     admin,
+    vault,
     fee_bps: feeBps,
     paused: false,
     shares: new MichelsonMap(),

@@ -2,6 +2,27 @@ import { useEffect, useState, type ReactNode } from "react";
 import { NETWORKS, useWallet } from "./tezos";
 
 export function NetworkWallet({ wallet }: { wallet: ReturnType<typeof useWallet> }) {
+  const [connecting, setConnecting] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
+
+  async function connect() {
+    setConnecting(true);
+    try {
+      await wallet.connect();
+    } finally {
+      setConnecting(false);
+    }
+  }
+
+  async function disconnect() {
+    setDisconnecting(true);
+    try {
+      await wallet.disconnect();
+    } finally {
+      setDisconnecting(false);
+    }
+  }
+
   return <>
     <fieldset>
       <legend>1. Network</legend>
@@ -14,8 +35,8 @@ export function NetworkWallet({ wallet }: { wallet: ReturnType<typeof useWallet>
       <legend>2. Wallet</legend>
       <div className="row">
         {wallet.address
-          ? <button className="secondary" onClick={() => void wallet.disconnect()}>Disconnect</button>
-          : <button onClick={() => void wallet.connect()}>Connect Wallet</button>}
+          ? <LoadingButton className="secondary" loading={disconnecting} onClick={() => void disconnect()}>Disconnect</LoadingButton>
+          : <LoadingButton loading={connecting} onClick={() => void connect()}>Connect Wallet</LoadingButton>}
       </div>
       <div className="wallet-info">
         {wallet.address ? `Connected: ${wallet.address} (${wallet.network})` : ""}
@@ -30,6 +51,30 @@ export function Page({ title, subtitle, children }: { title: string; subtitle: s
 
 export function Section({ title, children }: { title: string; children: ReactNode }) {
   return <fieldset><legend>{title}</legend>{children}</fieldset>;
+}
+
+export function LoadingButton({
+  loading,
+  children,
+  disabled,
+  className,
+  onClick,
+}: {
+  loading: boolean;
+  children: ReactNode;
+  disabled?: boolean;
+  className?: string;
+  onClick: () => void;
+}) {
+  return <button
+    className={className}
+    disabled={disabled || loading}
+    onClick={onClick}
+    aria-busy={loading}
+  >
+    {loading && <span className="button-spinner" aria-hidden="true" />}
+    {loading ? "Processing..." : children}
+  </button>;
 }
 
 export function Status({ messages }: { messages: string[] }) {
@@ -54,7 +99,7 @@ export function ContractCode({ url, value, onChange }: { url: string; value: str
   return <>
     <div className="row code-head">
       <label htmlFor="contractCode">Fetched from source link</label>
-      <button type="button" className="secondary small" onClick={() => void load()} disabled={loading}>Reload</button>
+      <LoadingButton className="secondary small" loading={loading} onClick={() => void load()}>Reload</LoadingButton>
     </div>
     {loading && <p className="hint">Fetching contract code...</p>}
     <textarea id="contractCode" value={value} onChange={(event) => onChange(event.target.value)} placeholder="Contract code will be fetched automatically..." readOnly />

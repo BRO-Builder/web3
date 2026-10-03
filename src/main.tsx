@@ -20,6 +20,8 @@ function App() {
           <Route path="deployment-ft.html" element={<DeploymentPage kind="token" />} />
           <Route path="deployment-dex" element={<DeploymentPage kind="dex" />} />
           <Route path="deployment-dex.html" element={<DeploymentPage kind="dex" />} />
+          <Route path="deployment-delegator" element={<DeploymentPage kind="delegator" />} />
+          <Route path="deployment-delegator.html" element={<DeploymentPage kind="delegator" />} />
           <Route path="deployment-dex-setup" element={<SetupPage />} />
           <Route path="deployment-dex-setup.html" element={<SetupPage />} />
           <Route path="exchange-dex" element={<ExchangePage />} />

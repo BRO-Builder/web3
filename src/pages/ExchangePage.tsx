@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { NetworkWallet, Page, Section, Status } from "../shared/Controls";
+import { LoadingButton, NetworkWallet, Page, Section, Status } from "../shared/Controls";
 import { getErrorMessage } from "../shared/contracts";
 import { fetchTokenMetadata } from "../shared/tokenMetadata";
 import { isValidAddress, useWallet } from "../shared/tezos";
@@ -36,6 +36,8 @@ export function ExchangePage() {
   const [authorizeOperator, setAuthorizeOperator] = useState(true);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [messages, setMessages] = useState(["Idle."]);
+  const [swapping, setSwapping] = useState(false);
+  const [loadingPool, setLoadingPool] = useState(false);
 
   function log(message: string) {
     setMessages((current) => [...current, message]);
@@ -47,6 +49,7 @@ export function ExchangePage() {
       return;
     }
 
+    setLoadingPool(true);
     try {
       const { toolkit } = await wallet.ensureWallet();
       const contract: any = await toolkit.wallet.at(address);
@@ -74,6 +77,8 @@ export function ExchangePage() {
       log("Pool loaded.");
     } catch (error) {
       log(`Failed to load pool: ${getErrorMessage(error)}`);
+    } finally {
+      setLoadingPool(false);
     }
   }
 
@@ -115,6 +120,7 @@ export function ExchangePage() {
   async function swap() {
     if (!quote || !pool || !wallet.address) return;
 
+    setSwapping(true);
     try {
       const { toolkit } = await wallet.ensureWallet();
       let operation;
@@ -155,6 +161,8 @@ export function ExchangePage() {
       setQuote(null);
     } catch (error) {
       log(`Swap failed: ${getErrorMessage(error)}`);
+    } finally {
+      setSwapping(false);
     }
   }
 
@@ -168,7 +176,7 @@ export function ExchangePage() {
       <label>DEX contract address
         <input value={address} onChange={(event) => setAddress(event.target.value)} placeholder="KT1..." />
       </label>
-      <button className="secondary" onClick={() => void loadPool()}>Load Pool</button>
+      <LoadingButton className="secondary" loading={loadingPool} onClick={() => void loadPool()}>Load Pool</LoadingButton>
       <PoolDetails pool={pool} />
     </Section>
     <Section title="4. Swap">
@@ -192,7 +200,7 @@ export function ExchangePage() {
         </label>
         <p className="hint">Required once so the DEX can pull your tokens. Untick it if you already authorized it.</p>
       </>}
-      <button className="deploy" disabled={!quote || !wallet.address} onClick={() => void swap()}>Swap</button>
+      <LoadingButton className="deploy" loading={swapping} disabled={!quote || !wallet.address} onClick={() => void swap()}>Swap</LoadingButton>
     </Section>
     <Status messages={messages} />
   </Page>;

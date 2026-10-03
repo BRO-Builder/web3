@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { NetworkWallet, Page, Section, Status } from "../shared/Controls";
+import { LoadingButton, NetworkWallet, Page, Section, Status } from "../shared/Controls";
 import { getErrorMessage } from "../shared/contracts";
 import { fetchTokenMetadata } from "../shared/tokenMetadata";
 import { isValidAddress, useWallet } from "../shared/tezos";
@@ -67,6 +67,9 @@ export function LiquidityPage() {
   const [slippage, setSlippage] = useState("0.5");
   const [authorizeOperator, setAuthorizeOperator] = useState(true);
   const [messages, setMessages] = useState(["Idle."]);
+  const [addingLiquidity, setAddingLiquidity] = useState(false);
+  const [removingLiquidity, setRemovingLiquidity] = useState(false);
+  const [loadingPool, setLoadingPool] = useState(false);
 
   const addQuote = useMemo(() => calculateAddQuote(pool, addXtz, slippage), [pool, addXtz, slippage]);
   const removeQuote = useMemo(() => calculateRemoveQuote(pool, removeShares, slippage), [pool, removeShares, slippage]);
@@ -90,6 +93,7 @@ export function LiquidityPage() {
       return;
     }
 
+    setLoadingPool(true);
     try {
       const { toolkit } = await wallet.ensureWallet();
       const contract: any = await toolkit.wallet.at(address);
@@ -118,6 +122,8 @@ export function LiquidityPage() {
       log("Pool loaded.");
     } catch (error) {
       log(`Failed to load pool: ${getErrorMessage(error)}`);
+    } finally {
+      setLoadingPool(false);
     }
   }
 
@@ -128,6 +134,7 @@ export function LiquidityPage() {
   async function addLiquidity() {
     if (!pool || !addQuote || !wallet.address) return;
 
+    setAddingLiquidity(true);
     try {
       const { toolkit } = await wallet.ensureWallet();
       const addCall = pool.contract.methodsObject.add_liquidity(addQuote.minShares.toString());
@@ -154,12 +161,15 @@ export function LiquidityPage() {
       log("Liquidity added.");
     } catch (error) {
       log(`Add liquidity failed: ${getErrorMessage(error)}`);
+    } finally {
+      setAddingLiquidity(false);
     }
   }
 
   async function removeLiquidity() {
     if (!pool || !removeQuote || !wallet.address) return;
 
+    setRemovingLiquidity(true);
     try {
       const operation = await pool.contract.methodsObject.remove_liquidity({
         shares: removeQuote.shares.toString(),
@@ -171,6 +181,8 @@ export function LiquidityPage() {
       log("Liquidity removed.");
     } catch (error) {
       log(`Remove liquidity failed: ${getErrorMessage(error)}`);
+    } finally {
+      setRemovingLiquidity(false);
     }
   }
 
@@ -180,7 +192,7 @@ export function LiquidityPage() {
       <label>DEX contract address
         <input value={address} onChange={(event) => setAddress(event.target.value)} placeholder="KT1..." />
       </label>
-      <button className="secondary" onClick={() => void loadPool()}>Load Pool</button>
+      <LoadingButton className="secondary" loading={loadingPool} onClick={() => void loadPool()}>Load Pool</LoadingButton>
       <PoolInfo pool={pool} />
     </Section>
     <Section title="4. Slippage">
@@ -199,7 +211,7 @@ export function LiquidityPage() {
       </label>
       <p className="hint">Required once so the DEX can pull your tokens. Untick it if you already authorized it.</p>
       <div className="info">{addQuote ? `You will deposit: ${formatUnits(addQuote.tokenIn, pool?.token.decimals ?? 0)} ${pool?.token.symbol}\nYou will receive: ${addQuote.shares} shares (minimum ${addQuote.minShares})` : ""}</div>
-      <button disabled={!addQuote || !wallet.address} onClick={() => void addLiquidity()}>Add Liquidity</button>
+      <LoadingButton loading={addingLiquidity} disabled={!addQuote || !wallet.address} onClick={() => void addLiquidity()}>Add Liquidity</LoadingButton>
     </Section>
     <Section title="6. Remove Liquidity">
       <label>Shares to redeem
@@ -209,7 +221,7 @@ export function LiquidityPage() {
         {[25, 50, 75, 100].map((percentage) => <button key={percentage} className="secondary small" disabled={!pool || myShares === 0n} onClick={() => setPercentage(percentage)}>{percentage === 100 ? "Max" : `${percentage}%`}</button>)}
       </div>
       <div className="info">{removeQuote ? `You will receive: ${formatUnits(removeQuote.xtzOut, 6)} XTZ + ${formatUnits(removeQuote.tokenOut, pool?.token.decimals ?? 0)} ${pool?.token.symbol}\nMinimum: ${formatUnits(removeQuote.minXtz, 6)} XTZ + ${formatUnits(removeQuote.minToken, pool?.token.decimals ?? 0)} ${pool?.token.symbol}` : ""}</div>
-      <button disabled={!removeQuote || !wallet.address} onClick={() => void removeLiquidity()}>Remove Liquidity</button>
+      <LoadingButton loading={removingLiquidity} disabled={!removeQuote || !wallet.address} onClick={() => void removeLiquidity()}>Remove Liquidity</LoadingButton>
     </Section>
     <Status messages={messages} />
   </Page>;

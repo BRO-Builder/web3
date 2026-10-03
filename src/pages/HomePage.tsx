@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 
 const tools = [
   ["Fungible-Token (FA2) Deployment", "Connect a wallet, configure your token details, and originate the compiled FT contract on Tezos.", "/deployment-ft", "Open Deployment Page", "deployment"],
+  ["BRODelegator Vault Deployment", "Originate the XTZ vault that tracks LP votes, delegates to a baker, and holds the DEX's funds.", "/deployment-delegator", "Open Deployment Page", "deployment"],
   ["Token <-> XTZ DEX Deployment", "Pair an FA2 token with XTZ, set the swap fee, and originate the constant-product DEX contract on Tezos.", "/deployment-dex", "Open Deployment Page", "deployment"],
   ["DEX Pool Setup", "After deploying a DEX, authorize it as an operator on your FA2 token and seed the pool with its first liquidity.", "/deployment-dex-setup", "Open Setup Page", "deployment"],
   ["Token <-> XTZ Exchange", "Swap XTZ and an FA2 token against a deployed DEX pool, with live quotes and slippage protection.", "/exchange-dex", "Open Exchange", "trading"],

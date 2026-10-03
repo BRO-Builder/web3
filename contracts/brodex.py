@@ -1,44 +1,22 @@
-"""Token <-> XTZ constant-product DEX
+"""Token <-> XTZ constant-product DEX (FA2 single-asset vs XTZ).
 
-Written in SmartPy's new (0.17+) module syntax, matching the style of the
-official FA2 library (https://smartpy.tezos.com/manual/libraries/FA2-lib).
+All XTZ lives in the paired BRODelegator vault (see bro_delegator.py):
+incoming XTZ is forwarded to the vault, outgoing XTZ is paid by the vault.
+Invariant: vault.accounted == dex.xtz_pool.
 
-- x * y = k constant-product swaps in both directions
-- LP shares tracked so liquidity providers can add/remove liquidity
-- Admin-configurable fee (in basis points) charged on every swap
-- The fee stays in the pool: the full input amount is added to the
-  reserves, but the output is computed from the fee-adjusted input.
-  This grows k over time, so the fee accrues to liquidity providers
-  when they redeem their shares.
-- Admin can pause the contract, disabling initialize_pool, add_liquidity,
-  remove_liquidity, xtz_to_token, and token_to_xtz.
-- Interacts with a paired FA2 single-asset (or any single-token-id FA2)
-  contract using the standard batched `transfer` entrypoint. Traders and
-  liquidity providers must call `update_operators` on the token contract
-  to authorize this DEX before it can pull their tokens.
+- x * y = k swaps in both directions; LP shares for liquidity providers
+- Admin-configurable fee (bps); the fee stays in the pool and accrues to LPs
+- Admin pause switch
+- Reports LP share changes to the vault so LP votes follow liquidity
 
 This is illustrative / educational code. Have it audited before using it
 with real funds.
 """
 
 import smartpy as sp
-
-@sp.module
-def t():
-  metadata: type = sp.big_map[sp.string, sp.bytes]
-
-  tx: type = sp.record(
-    to_=sp.address,
-    token_id=sp.nat,
-    amount=sp.nat,
-  ).layout(("to_", ("token_id", "amount")))
-
-  transfer_batch: type = sp.record(
-    from_=sp.address,
-    txs=list[tx],
-  ).layout(("from_", "txs"))
-
-  transfer_params: type = list[transfer_batch]
+from .utils.common import t
+from .utils.helper import helpers
+from .brodelegator import delegator
 
 
 @sp.module
@@ -47,11 +25,15 @@ def main():
   import smartpy.stdlib.utils as utils # type: ignore
 
   class BRODex(sp.Contract):
-    """Constant-product AMM trading a single-asset FA2 token against XTZ."""
+    """Constant-product AMM trading a single-asset FA2 token against XTZ.
+    All XTZ lives in the paired BRODelegator vault."""
 
-    def __init__(self, contract_metadata, admin, token_address, token_id, fee_bps):
+    def __init__(
+      self, contract_metadata, admin, token_address, token_id, fee_bps, vault
+    ):
       self.data.metadata = sp.cast(contract_metadata, t.metadata)
       self.data.admin = admin
+      self.data.vault = sp.cast(vault, sp.address)
       self.data.token_address = token_address
       self.data.token_id = sp.cast(token_id, sp.nat)
       self.data.fee_bps = sp.cast(fee_bps, sp.nat)
@@ -82,6 +64,42 @@ def main():
       ]
       sp.transfer(arg, sp.mutez(0), contract)
 
+    @sp.private(with_storage="read-only", with_operations=True)
+    def vault_deposit_(self, amount):
+      """Forward incoming XTZ to the vault."""
+      sp.cast(amount, sp.mutez)
+      vault = sp.contract(sp.unit, self.data.vault, "deposit").unwrap_some(
+        error="VAULT_DEPOSIT_NOT_FOUND"
+      )
+      sp.transfer((), amount, vault)
+
+    @sp.private(with_storage="read-only", with_operations=True)
+    def vault_withdraw_(self, params):
+      """Have the vault pay XTZ directly to `to_`."""
+      sp.cast(params, t.withdraw_params)
+      vault = sp.contract(
+        t.withdraw_params, self.data.vault, "withdraw"
+      ).unwrap_some(error="VAULT_WITHDRAW_NOT_FOUND")
+      sp.transfer(params, sp.mutez(0), vault)
+
+    @sp.private(with_storage="read-only", with_operations=True)
+    def vault_sync_(self, owner):
+      """Tell the vault `owner`'s current shares (call AFTER updating
+      storage) so vote weights follow liquidity changes."""
+      sp.cast(owner, sp.address)
+      vault = sp.contract(
+        t.sync_params, self.data.vault, "sync_shares"
+      ).unwrap_some(error="VAULT_SYNC_NOT_FOUND")
+      sp.transfer(
+        sp.record(
+          owner=owner,
+          shares=self.data.shares.get(owner, default=0),
+          total_shares=self.data.total_shares,
+        ),
+        sp.mutez(0),
+        vault,
+      )
+
     @sp.entrypoint
     def set_admin(self, new_admin):
       sp.cast(new_admin, sp.address)
@@ -104,6 +122,16 @@ def main():
       self.data.paused = new_paused
 
     @sp.entrypoint
+    def credit_rewards(self, amount):
+      """Vault-only. Baker rewards already sitting in the vault are added
+      to the pool's XTZ reserve (no transfer needed). This raises k, so
+      LPs capture the rewards when they redeem shares. Intentionally not
+      blocked by `paused`."""
+      sp.cast(amount, sp.mutez)
+      assert sp.sender == self.data.vault, "NOT_VAULT"
+      self.data.xtz_pool += amount
+
+    @sp.entrypoint
     def initialize_pool(self, token_amount):
       """One-time bootstrap of the pool. Caller sends XTZ as the
       transaction amount and specifies how much token to seed it with.
@@ -118,12 +146,15 @@ def main():
       self.token_transfer_(
         sp.record(from_=sp.sender, to_=sp.self_address, amount=token_amount)
       )
+      self.vault_deposit_(sp.amount)
 
       self.data.xtz_pool = sp.amount
       self.data.token_pool = token_amount
       initial_shares = token_amount
       self.data.total_shares = initial_shares
       self.data.shares[sp.sender] = initial_shares
+
+      self.vault_sync_(sp.sender)
 
     @sp.entrypoint
     def add_liquidity(self, min_shares):
@@ -147,6 +178,7 @@ def main():
       self.token_transfer_(
         sp.record(from_=sp.sender, to_=sp.self_address, amount=token_required)
       )
+      self.vault_deposit_(sp.amount)
 
       self.data.xtz_pool += sp.amount
       self.data.token_pool += token_required
@@ -154,6 +186,8 @@ def main():
 
       current = self.data.shares.get(sp.sender, default=0)
       self.data.shares[sp.sender] = current + new_shares
+
+      self.vault_sync_(sp.sender)
 
     @sp.entrypoint
     def remove_liquidity(self, params):
@@ -179,16 +213,17 @@ def main():
       self.data.xtz_pool -= xtz_out
       self.data.token_pool = sp.as_nat(self.data.token_pool - token_out)
 
-      sp.send(sp.sender, xtz_out)
+      self.vault_withdraw_(sp.record(to_=sp.sender, amount=xtz_out))
       self.token_transfer_(
         sp.record(from_=sp.self_address, to_=sp.sender, amount=token_out)
       )
+      self.vault_sync_(sp.sender)
 
     @sp.entrypoint
     def xtz_to_token(self, min_tokens_out):
       """Caller sends XTZ as the transaction amount, receives token back.
-      The full XTZ input joins the pool; the fee portion is simply not
-      counted when pricing the output, so it stays in the reserves."""
+      The full XTZ input joins the pool (forwarded to the vault); the fee
+      portion is simply not counted when pricing the output."""
       sp.cast(min_tokens_out, sp.nat)
       assert not self.data.paused, "PAUSED"
       assert self.data.total_shares > 0, "POOL_NOT_INITIALIZED"
@@ -208,6 +243,7 @@ def main():
       self.data.xtz_pool += sp.amount
       self.data.token_pool = sp.as_nat(self.data.token_pool - tokens_out)
 
+      self.vault_deposit_(sp.amount)
       self.token_transfer_(
         sp.record(from_=sp.self_address, to_=sp.sender, amount=tokens_out)
       )
@@ -243,7 +279,12 @@ def main():
       self.data.token_pool += params.token_amount
       self.data.xtz_pool -= xtz_out
 
-      sp.send(sp.sender, xtz_out)
+      self.vault_withdraw_(sp.record(to_=sp.sender, amount=xtz_out))
+
+    @sp.onchain_view()
+    def get_shares(self, owner):
+      sp.cast(owner, sp.address)
+      return self.data.shares.get(owner, default=0)
 
     @sp.onchain_view()
     def get_price_xtz_to_token(self, xtz_in):
@@ -263,58 +304,31 @@ def main():
       )
 
 
-@sp.module
-def helpers():
-  import t # type: ignore
-
-  class DummyFA2(sp.Contract):
-    """Minimal FA2 single-asset token stub, for testing only.
-    A real FA2 contract also enforces operator permissions on
-    `transfer`; this stub skips that check to keep tests short."""
-
-    def __init__(self, admin):
-      self.data.admin = admin
-      self.data.balances = sp.cast(sp.big_map(), sp.big_map[sp.address, sp.nat])
-
-    @sp.entrypoint
-    def mint(self, params):
-      sp.cast(params, sp.record(to_=sp.address, amount=sp.nat))
-      assert sp.sender == self.data.admin, "NOT_ADMIN"
-      current = self.data.balances.get(params.to_, default=0)
-      self.data.balances[params.to_] = current + params.amount
-
-    @sp.entrypoint
-    def transfer(self, batch):
-      sp.cast(batch, t.transfer_params)
-      for transfer_ in batch:
-        for tx in transfer_.txs:
-          from_bal = self.data.balances.get(transfer_.from_, default=0)
-          assert from_bal >= tx.amount, "FA2_INSUFFICIENT_BALANCE"
-          self.data.balances[transfer_.from_] = sp.as_nat(from_bal - tx.amount)
-          to_bal = self.data.balances.get(tx.to_, default=0)
-          self.data.balances[tx.to_] = to_bal + tx.amount
-
-
 @sp.add_test()
-def test():
+def test_dex():
   admin = sp.test_account("Admin")
   alice = sp.test_account("Alice")
   bob = sp.test_account("Bob")
+  baker1 = sp.test_account("Baker1")
+  bakers = {baker1.public_key_hash: 0}
 
-  scenario = sp.test_scenario("build/BRODex", [t, main, helpers])
+  scenario = sp.test_scenario("build/BRODex", [t, delegator, main, helpers])
   scenario.h1("Token (FA2 single-asset) <-> XTZ DEX")
 
   token = helpers.DummyFA2(admin.address)
   scenario += token
-
+  vault = delegator.BRODelegator(metadata=sp.big_map(), admin=admin.address, quorum_bps=1000)
+  scenario += vault
   dex = main.BRODex(
     contract_metadata=sp.big_map(),
     admin=admin.address,
     token_address=token.address,
     token_id=0,
     fee_bps=30,
+    vault=vault.address,
   )
   scenario += dex
+  vault.set_dex(dex.address, _sender=admin.address)
 
   token.mint(to_=admin.address, amount=2_000_000, _sender=admin.address)
   token.transfer(
@@ -327,38 +341,115 @@ def test():
     _sender=admin.address,
   )
 
-  # bootstrap pool: 10,000 tez <-> 100,000 token
-  dex.initialize_pool(100_000, _sender=admin.address, _amount=sp.tez(10_000))
+  scenario.h2("Before the pool exists")
+  dex.xtz_to_token(0, _sender=bob.address, _amount=sp.tez(1), _valid=False)
+  dex.add_liquidity(0, _sender=bob.address, _amount=sp.tez(1), _valid=False)
+  dex.initialize_pool(100, _sender=admin.address, _valid=False)  # NEED_XTZ
+  dex.initialize_pool(0, _sender=admin.address, _amount=sp.tez(1), _valid=False)
 
-  # Bob swaps XTZ -> token; the full 100 tez (fee included) joins the pool
+  scenario.h2("Bootstrap: 10,000 tez <-> 100,000 token")
+  dex.initialize_pool(100_000, _sender=admin.address, _amount=sp.tez(10_000))
+  scenario.verify(dex.balance == sp.tez(0))  # DEX holds no XTZ itself
+  scenario.verify(vault.balance == sp.tez(10_000))
+  scenario.verify(vault.data.accounted == dex.data.xtz_pool)
+  scenario.verify(dex.data.shares[admin.address] == 100_000)
+  scenario.verify(vault.data.shares[admin.address] == 100_000)
+  dex.initialize_pool(
+    1, _sender=admin.address, _amount=sp.tez(1), _valid=False
+  )  # ALREADY_INITIALIZED
+
+  scenario.h2("XTZ -> token")
   dex.xtz_to_token(0, _sender=bob.address, _amount=sp.tez(100))
   scenario.verify(dex.data.xtz_pool == sp.tez(10_100))
+  scenario.verify(vault.balance == sp.tez(10_100))
+  scenario.verify(dex.balance == sp.tez(0))
+  # slippage guard
+  dex.xtz_to_token(
+    10_000_000, _sender=bob.address, _amount=sp.tez(1), _valid=False
+  )
 
-  # Alice swaps token -> XTZ; the full 1,000 tokens (fee included) join the pool
+  scenario.h2("Token -> XTZ")
   token_pool_before = scenario.compute(dex.data.token_pool)
   dex.token_to_xtz(
     sp.record(token_amount=1_000, min_xtz_out=sp.mutez(0)),
     _sender=alice.address,
   )
   scenario.verify(dex.data.token_pool == token_pool_before + 1_000)
+  scenario.verify(vault.balance == dex.data.xtz_pool)
+  scenario.verify(dex.balance == sp.tez(0))
+  # slippage guard
+  dex.token_to_xtz(
+    sp.record(token_amount=1_000, min_xtz_out=sp.tez(1_000)),
+    _sender=alice.address,
+    _valid=False,
+  )
+  dex.token_to_xtz(
+    sp.record(token_amount=0, min_xtz_out=sp.mutez(0)),
+    _sender=alice.address,
+    _valid=False,
+  )
 
-  # admin updates fee
+  scenario.h2("Add / remove liquidity")
+  dex.add_liquidity(0, _sender=alice.address, _amount=sp.tez(1_000))
+  scenario.verify(vault.balance == dex.data.xtz_pool)
+  scenario.verify(vault.data.total_shares == dex.data.total_shares)
+  scenario.verify(
+    vault.data.shares[alice.address] == dex.data.shares[alice.address]
+  )
+  alice_shares = scenario.compute(dex.data.shares[alice.address])
+  # can't redeem more than owned, nor with an impossible minimum
+  dex.remove_liquidity(
+    sp.record(shares=alice_shares + 1, min_xtz=sp.mutez(0), min_token=0),
+    _sender=alice.address,
+    _valid=False,
+  )
+  dex.remove_liquidity(
+    sp.record(shares=alice_shares, min_xtz=sp.tez(1_000_000), min_token=0),
+    _sender=alice.address,
+    _valid=False,
+  )
+  dex.remove_liquidity(
+    sp.record(shares=alice_shares, min_xtz=sp.mutez(0), min_token=0),
+    _sender=alice.address,
+  )
+  scenario.verify(dex.data.shares[alice.address] == 0)
+  scenario.verify(vault.data.shares[alice.address] == 0)
+  scenario.verify(vault.balance == dex.data.xtz_pool)
+  scenario.verify(vault.data.total_shares == dex.data.total_shares)
+
+  scenario.h2("Share changes reach the vault's vote tally")
+  vault.vote(baker1.public_key_hash, _sender=admin.address)
+  scenario.verify(vault.data.tally[baker1.public_key_hash] == 100_000)
+  dex.remove_liquidity(
+    sp.record(shares=40_000, min_xtz=sp.mutez(0), min_token=0),
+    _sender=admin.address,
+  )
+  scenario.verify(vault.data.tally[baker1.public_key_hash] == 60_000)
+  dex.add_liquidity(0, _sender=admin.address, _amount=sp.tez(1_000))
+  scenario.verify(
+    vault.data.tally[baker1.public_key_hash] == dex.data.shares[admin.address]
+  )
+  scenario.verify(vault.balance == dex.data.xtz_pool)
+
+  scenario.h2("Vault rewards raise the pool reserve (credit_rewards)")
+  dex.credit_rewards(sp.tez(1), _sender=alice.address, _valid=False)
+  dex.credit_rewards(sp.tez(1), _sender=admin.address, _valid=False)
+  pool_before = scenario.compute(dex.data.xtz_pool)
+  vault.default(_sender=bob.address, _amount=sp.tez(50))
+  vault.harvest(_sender=bob.address)
+  scenario.verify(dex.data.xtz_pool == pool_before + sp.tez(50))
+  scenario.verify(vault.balance == dex.data.xtz_pool)
+
+  scenario.h2("Admin: fee / admin / pause")
   dex.set_fee(50, _sender=admin.address)
-
-  # non-admin cannot change fee
+  scenario.verify(dex.data.fee_bps == 50)
   dex.set_fee(10, _sender=alice.address, _valid=False)
-
-  # fee above 100% is rejected
   dex.set_fee(10_001, _sender=admin.address, _valid=False)
-
-  # non-admin cannot pause
+  dex.set_admin(alice.address, _sender=bob.address, _valid=False)
   dex.pause(True, _sender=alice.address, _valid=False)
 
-  # admin pauses the contract
   dex.pause(True, _sender=admin.address)
   scenario.verify(dex.data.paused)
-
-  # trading and liquidity entrypoints are disabled while paused
   dex.xtz_to_token(0, _sender=bob.address, _amount=sp.tez(10), _valid=False)
   dex.token_to_xtz(
     sp.record(token_amount=100, min_xtz_out=sp.mutez(0)),
@@ -371,7 +462,12 @@ def test():
     _sender=admin.address,
     _valid=False,
   )
+  # reward crediting is accounting only, so it still works while paused
+  vault.default(_sender=bob.address, _amount=sp.tez(5))
+  vault.harvest(_sender=bob.address)
+  scenario.verify(vault.balance == dex.data.xtz_pool)
 
-  # admin unpauses and trading works again
   dex.pause(False, _sender=admin.address)
   dex.xtz_to_token(0, _sender=bob.address, _amount=sp.tez(10))
+  scenario.verify(vault.balance == dex.data.xtz_pool)
+  scenario.verify(dex.balance == sp.tez(0))
