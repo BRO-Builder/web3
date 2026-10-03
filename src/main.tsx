@@ -8,6 +8,7 @@ import { DeploymentPage } from "./pages/DeploymentPage";
 import { SetupPage } from "./pages/SetupPage";
 import { ExchangePage } from "./pages/ExchangePage";
 import { LiquidityPage } from "./pages/LiquidityPage";
+import { VotingPage } from "./pages/VotingPage";
 import "./styles.css";
 
 function App() {
@@ -28,6 +29,8 @@ function App() {
           <Route path="exchange-dex.html" element={<ExchangePage />} />
           <Route path="liquidity-dex" element={<LiquidityPage />} />
           <Route path="liquidity-dex.html" element={<LiquidityPage />} />
+          <Route path="vote" element={<VotingPage />} />
+          <Route path="vote.html" element={<VotingPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

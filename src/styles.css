@@ -265,6 +265,48 @@ button.secondary {
   word-break: break-all
 }
 
+.table-wrap {
+  overflow-x: auto
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .8rem
+}
+
+th,
+td {
+  text-align: left;
+  padding: 8px 6px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap
+}
+
+th {
+  color: #8a8f98;
+  font-weight: 500;
+  font-size: .75rem
+}
+
+.tag {
+  display: inline-block;
+  font-size: .68rem;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  margin-left: 5px;
+  color: #8a8f98
+}
+
+.tag.ok {
+  color: var(--ok)
+}
+
+.tag.warn {
+  color: var(--amber-dark)
+}
+
 .status {
   white-space: pre-wrap;
   background: var(--navy);
