@@ -77,9 +77,8 @@ BROFunding.
   - `VITE_MARKET_ADDRESS`
 - The MA serves exactly one ledger. A second BROProjects needs its own MA.
 
-The Build Pool Admin page (brobuilder-dex) and this repo's Projects Setup
-page (`/deployment-projects-setup`) flag mismatched market and token links,
-but only those they can see.
+This repo's Projects Setup page (`/deployment-projects-setup`) flags
+mismatched market and token links, but only those it can see.
 
 ## 3. Units and rounding
 
@@ -188,8 +187,8 @@ The tests check that the total is conserved across every account and contract
 
 **MA reserve sizing:** the reserve funds claim shortfalls, where too little
 blocks the claim, and settlement shortfalls, where too little leaves
-investors short (`uncovered_bro`). Withdrawing from the reserve (Admin page →
-Withdraw BRO) directly reduces what open projects can draw on.
+investors short (`uncovered_bro`). Withdrawing from the reserve (Projects Setup
+page → Manage the Reserve) directly reduces what open projects can draw on.
 
 ## 7. Permissions
 

@@ -127,7 +127,7 @@ Each deployment page fetches its compiled `.tz` from `static.eidoriantan.com/con
 | `/deployment-market` | BROMarketAssistant | BRO token and id, BRODex, oracle address, max price age (seconds), admin. |
 | `/deployment-funding` | BROFunding | MA, BRO token and id, late fee (bps/day), max milestones, admin. |
 | `/deployment-projects` | BROProjects | BROFunding, MA, BRO token and id, grace period (days), admin. |
-| `/deployment-projects-setup` | Projects setup | Takes BROFunding + BROProjects addresses. Links them (`set_projects`, `set_ledger`), funds the MA reserve, pushes the first price, sets the approver NFT, edits rules (late fee, grace days, max price age), pauses, changes the market and transfers admins. Flags mismatched links. |
+| `/deployment-projects-setup` | Projects setup | Takes BROFunding + BROProjects addresses. Links them (`set_projects`, `set_ledger`), funds the MA reserve, withdraws and swaps it on BRODex, pushes the first price, sets the oracle and DEX, sets the approver NFT, edits rules (late fee, grace days, max price age), pauses, changes the market and transfers admins. Flags mismatched links. |
 
 ### Trading and voting
 

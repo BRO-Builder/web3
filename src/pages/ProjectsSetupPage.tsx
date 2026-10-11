@@ -22,6 +22,7 @@ type Setup = {
   projectsMarket: string;
   marketLedger: string | null;
   oracle: string;
+  dex: string;
   tokens: Record<ContractKey, string>;
   tokenAddress: string;
   tokenId: string;
@@ -71,6 +72,10 @@ export function ProjectsSetupPage() {
   const [graceDays, setGraceDays] = useState("");
   const [maxPriceAge, setMaxPriceAge] = useState("");
   const [newMarket, setNewMarket] = useState("");
+  const [withdraw, setWithdraw] = useState({ to: "", bro: "", xtz: "" });
+  const [swap, setSwap] = useState({ xtz: "", bro: "", slippage: "1" });
+  const [newOracle, setNewOracle] = useState("");
+  const [newDex, setNewDex] = useState("");
   const [newAdmins, setNewAdmins] = useState<Record<ContractKey, string>>({ funding: "", projects: "", market: "" });
   const [busy, setBusy] = useState<string | null>(null);
   const [messages, setMessages] = useState(["Idle."]);
@@ -122,6 +127,7 @@ export function ProjectsSetupPage() {
         projectsMarket: projectsStorage.market,
         marketLedger: readOption<string>(marketStorage.ledger),
         oracle: marketStorage.oracle,
+        dex: marketStorage.dex,
         tokens: {
           funding: `${tokenAddress}#${tokenId}`,
           projects: `${projectsStorage.token_address}#${projectsStorage.token_id}`,
@@ -215,6 +221,61 @@ export function ProjectsSetupPage() {
     void run("price", "update_price", (toolkit, s) => call(toolkit, s.market, "update_price", price.toString()));
   }
 
+  function withdrawReserve(asset: "bro" | "xtz") {
+    if (!setup) return;
+    const to = withdraw.to.trim();
+    if (!isValidAddress(to)) {
+      log("Enter a valid recipient address.");
+      return;
+    }
+    const decimals = asset === "bro" ? setup.token.decimals : 6;
+    const amount = parseUnits(withdraw[asset], decimals);
+    if (!amount || amount <= 0n) {
+      log(`Enter a positive ${asset === "bro" ? setup.token.symbol : "XTZ"} amount with at most ${decimals} decimals.`);
+      return;
+    }
+    const entrypoint = asset === "bro" ? "withdraw_token" : "withdraw_xtz";
+    void run(`withdraw-${asset}`, entrypoint, (toolkit, c) => call(toolkit, c.market, entrypoint, { to_: to, amount: amount.toString() }));
+  }
+
+  // Swaps the reserve on BRODex. The minimum output is the DEX's own quote
+  // view minus the slippage, read just before signing.
+  function swapReserve(direction: "buy" | "sell") {
+    if (!setup) return;
+    const slippageBps = Math.round(Number(swap.slippage) * 100);
+    if (!Number.isFinite(slippageBps) || slippageBps < 0 || slippageBps >= 10000) {
+      log("Slippage must be between 0% and 100%.");
+      return;
+    }
+    const amount = direction === "buy" ? parseUnits(swap.xtz, 6) : parseUnits(swap.bro, setup.token.decimals);
+    if (!amount || amount <= 0n) {
+      log(direction === "buy" ? "Enter a positive XTZ amount with at most 6 decimals." : `Enter a positive ${setup.token.symbol} amount.`);
+      return;
+    }
+    const entrypoint = direction === "buy" ? "swap_xtz_to_bro" : "swap_bro_to_xtz";
+    void run(`swap-${direction}`, entrypoint, async (toolkit, c) => {
+      const dex: any = await toolkit.wallet.at(c.dex);
+      const view = direction === "buy" ? dex.contractViews.get_price_xtz_to_token : dex.contractViews.get_price_token_to_xtz;
+      const quote = toBigInt(await view(amount.toString()).executeView({ viewCaller: c.dex }));
+      const minimum = quote * BigInt(10000 - slippageBps) / 10000n;
+      log(direction === "buy"
+        ? `Quote: ${formatUnits(quote, c.token.decimals)} ${c.token.symbol}, minimum ${formatUnits(minimum, c.token.decimals)}.`
+        : `Quote: ${formatUnits(quote, 6)} XTZ, minimum ${formatUnits(minimum, 6)}.`);
+      return call(toolkit, c.market, entrypoint, direction === "buy"
+        ? { xtz: amount.toString(), min_out: minimum.toString() }
+        : { amount: amount.toString(), min_xtz_out: minimum.toString() });
+    });
+  }
+
+  function setMarketAddress(entrypoint: "set_oracle" | "set_dex", value: string) {
+    const address = value.trim();
+    if (!isValidAddress(address)) {
+      log(`Enter a valid ${entrypoint === "set_oracle" ? "oracle" : "BRODex"} address.`);
+      return;
+    }
+    void run(entrypoint, entrypoint, (toolkit, c) => call(toolkit, c.market, entrypoint, address));
+  }
+
   function setNft(clear: boolean) {
     if (!clear && (!isValidAddress(nftAddress.trim()) || !/^\d+$/.test(nftTokenId))) {
       log("Enter a valid NFT contract address and token ID.");
@@ -270,7 +331,7 @@ export function ProjectsSetupPage() {
     return isAdmin(key) ? "  (you)" : "";
   }
 
-  return <Page title="Set Up BRO Projects" subtitle="Link BROFunding, BROProjects and the market assistant, fund the reserve, push the first price, and manage the admin settings of all three.">
+  return <Page title="Set Up BRO Projects" subtitle="Link BROFunding, BROProjects and the market assistant, fund and manage the reserve, push the first price, and manage the admin settings of all three.">
     <NetworkWallet wallet={wallet} />
 
     <Section title="3. Contracts">
@@ -292,6 +353,7 @@ export function ProjectsSetupPage() {
             `Market: ${s.market}`,
             `  admin: ${s.admins.market}${adminTag("market")}`,
             `  oracle: ${s.oracle}${isOracle ? "  (you)" : ""}`,
+            `  DEX: ${s.dex}`,
             `Token: ${symbol} (${s.tokenAddress}, id ${s.tokenId})`,
           ].join("\n")}
         </div>
@@ -355,7 +417,40 @@ export function ProjectsSetupPage() {
         <LoadingButton className="secondary" loading={busy === "xtz"} disabled={!wallet.address} onClick={fundXtz}>Send XTZ</LoadingButton>
       </Section>
 
-      <Section title="6. Push the BRO/USD Price">
+      <Section title="6. Manage the Reserve">
+        <p className="hint">
+          Market admin only{isAdmin("market") ? "" : " (connect the market admin wallet)"}. The reserve pays milestone shortfalls and settlement top-ups,
+          so keep enough {symbol} for open projects. Reserve: {formatBro(s.reserveBro)} and {formatUnits(s.reserveXtz, 6)} XTZ.
+        </p>
+        <Step title="Withdraw (withdraw_token, withdraw_xtz)">
+          <label>Recipient
+            <input value={withdraw.to} onChange={(event) => setWithdraw((current) => ({ ...current, to: event.target.value }))} placeholder="tz1..." />
+          </label>
+          <div className="row">
+            <input className="grow" type="number" min="0" step="any" value={withdraw.bro} onChange={(event) => setWithdraw((current) => ({ ...current, bro: event.target.value }))} placeholder={`${symbol} amount`} />
+            <LoadingButton className="secondary" loading={busy === "withdraw-bro"} disabled={!isAdmin("market")} onClick={() => withdrawReserve("bro")}>Withdraw {symbol}</LoadingButton>
+          </div>
+          <div className="row">
+            <input className="grow" type="number" min="0" step="any" value={withdraw.xtz} onChange={(event) => setWithdraw((current) => ({ ...current, xtz: event.target.value }))} placeholder="XTZ amount" />
+            <LoadingButton className="secondary" loading={busy === "withdraw-xtz"} disabled={!isAdmin("market")} onClick={() => withdrawReserve("xtz")}>Withdraw XTZ</LoadingButton>
+          </div>
+        </Step>
+        <Step title="Swap on BRODex (swap_xtz_to_bro, swap_bro_to_xtz)" hint={`Trades the reserve on ${s.dex}. The minimum output is the DEX's quote minus the slippage.`}>
+          <label>Slippage (%)
+            <input type="number" min="0" max="50" step="0.1" value={swap.slippage} onChange={(event) => setSwap((current) => ({ ...current, slippage: event.target.value }))} />
+          </label>
+          <div className="row">
+            <input className="grow" type="number" min="0" step="any" value={swap.xtz} onChange={(event) => setSwap((current) => ({ ...current, xtz: event.target.value }))} placeholder="XTZ to spend" />
+            <LoadingButton className="secondary" loading={busy === "swap-buy"} disabled={!isAdmin("market")} onClick={() => swapReserve("buy")}>Buy {symbol}</LoadingButton>
+          </div>
+          <div className="row">
+            <input className="grow" type="number" min="0" step="any" value={swap.bro} onChange={(event) => setSwap((current) => ({ ...current, bro: event.target.value }))} placeholder={`${symbol} to sell`} />
+            <LoadingButton className="secondary" loading={busy === "swap-sell"} disabled={!isAdmin("market")} onClick={() => swapReserve("sell")}>Sell {symbol}</LoadingButton>
+          </div>
+        </Step>
+      </Section>
+
+      <Section title="7. Push the BRO/USD Price">
         <label>USD price of 1 {symbol}
           <input type="number" min="0" step="any" value={priceInput} onChange={(event) => setPriceInput(event.target.value)} placeholder="e.g. 0.05" />
         </label>
@@ -364,9 +459,22 @@ export function ProjectsSetupPage() {
           BROFunding and BROProjects reject prices older than {s.maxPriceAge.toString()} seconds, so the oracle must keep pushing.
         </p>
         <LoadingButton loading={busy === "price"} disabled={!isOracle} onClick={pushPrice}>Push Price</LoadingButton>
+
+        <Step title="Oracle and DEX (set_oracle, set_dex)" hint={<>Market admin only. The oracle is the only wallet allowed to push prices (the PHP price job signs with it). The DEX is where the reserve swaps.</>}>
+          <label htmlFor="newOracle">New oracle (current: {s.oracle})</label>
+          <div className="row">
+            <input id="newOracle" className="grow" value={newOracle} onChange={(event) => setNewOracle(event.target.value)} placeholder="tz1..." />
+            <LoadingButton className="secondary" loading={busy === "set_oracle"} disabled={!isAdmin("market")} onClick={() => setMarketAddress("set_oracle", newOracle)}>Set Oracle</LoadingButton>
+          </div>
+          <label htmlFor="newDex">New BRODex (current: {s.dex})</label>
+          <div className="row">
+            <input id="newDex" className="grow" value={newDex} onChange={(event) => setNewDex(event.target.value)} placeholder="KT1..." />
+            <LoadingButton className="secondary" loading={busy === "set_dex"} disabled={!isAdmin("market")} onClick={() => setMarketAddress("set_dex", newDex)}>Set DEX</LoadingButton>
+          </div>
+        </Step>
       </Section>
 
-      <Section title="7. Approver NFT (set_nft)">
+      <Section title="8. Approver NFT (set_nft)">
         <p className="hint">BROProjects admin only. Holders of this FA2 token may approve milestones and mark defaults. The token contract must expose the <code>get_balance_of</code> on-chain view.</p>
         <label>NFT contract address
           <input value={nftAddress} onChange={(event) => setNftAddress(event.target.value)} placeholder="KT1..." />
@@ -380,7 +488,7 @@ export function ProjectsSetupPage() {
         </div>
       </Section>
 
-      <Section title="8. Rules">
+      <Section title="9. Rules">
         <label htmlFor="lateFee">Late fee (basis points per day)</label>
         <div className="row">
           <input id="lateFee" className="grow" type="number" min="0" max="10000" value={lateFee} onChange={(event) => setLateFee(event.target.value)} />
@@ -401,7 +509,7 @@ export function ProjectsSetupPage() {
         <p className="hint">Market admin. How long a pushed price stays usable.</p>
       </Section>
 
-      <Section title="9. Pause">
+      <Section title="10. Pause">
         <Step title={`BROFunding: ${s.fundingPaused ? "paused" : "running"}`} hint="BROFunding admin. While paused, submitting projects, investing and refunds are disabled.">
           <LoadingButton className={s.fundingPaused ? undefined : "secondary"} loading={busy === "pause-funding"} disabled={!isAdmin("funding")} onClick={() => void run("pause-funding", s.fundingPaused ? "Unpause BROFunding" : "Pause BROFunding", (toolkit, c) => call(toolkit, c.funding, "pause", !c.fundingPaused))}>
             {s.fundingPaused ? "Unpause BROFunding" : "Pause BROFunding"}
@@ -414,7 +522,7 @@ export function ProjectsSetupPage() {
         </Step>
       </Section>
 
-      <Section title="10. Change Market (set_market)">
+      <Section title="11. Change Market (set_market)">
         <label>New market assistant address
           <input value={newMarket} onChange={(event) => setNewMarket(event.target.value)} placeholder="KT1..." />
         </label>
@@ -429,7 +537,7 @@ export function ProjectsSetupPage() {
         </div>
       </Section>
 
-      <Section title="11. Transfer Admin (set_admin)">
+      <Section title="12. Transfer Admin (set_admin)">
         <p className="hint">Takes effect immediately, with no confirmation step from the new admin. Double-check the address: a wrong one locks you out of that contract.</p>
         {(["funding", "projects", "market"] as const).map((key) => <div key={key}>
           <label htmlFor={`admin-${key}`}>New {CONTRACT_NAMES[key]} admin (current: {s.admins[key]}{adminTag(key)})</label>

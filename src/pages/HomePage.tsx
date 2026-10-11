@@ -8,7 +8,7 @@ const tools = [
   ["BROMarketAssistant Deployment", "Originate the BRO/USD price feed and BRO reserve that backs project payouts and settlements.", "/deployment-market", "Open Deployment Page", "deployment"],
   ["BROFunding Deployment", "Originate the contract that lists projects and collects investor BRO until each project is fully funded.", "/deployment-funding", "Open Deployment Page", "deployment"],
   ["BROProjects Deployment", "Originate the contract that escrows funded BRO, pays milestones, and settles repayments.", "/deployment-projects", "Open Deployment Page", "deployment"],
-  ["BRO Projects Setup", "After deploying, link BROFunding, BROProjects and the market, fund the reserve, push the first price, and manage admin settings.", "/deployment-projects-setup", "Open Setup Page", "deployment"],
+  ["BRO Projects Setup", "After deploying, link BROFunding, BROProjects and the market, fund and manage the reserve, push the first price, and manage admin settings.", "/deployment-projects-setup", "Open Setup Page", "deployment"],
   ["DEX Baker Voting", "Vote with your DEX liquidity shares for a baker and trigger eligible delegate changes for the vault.", "/vote", "Open Voting", "voting"],
   ["Token <-> XTZ Exchange", "Swap XTZ and an FA2 token against a deployed DEX pool, with live quotes and slippage protection.", "/exchange-dex", "Open Exchange", "trading"],
   ["DEX Liquidity", "Add liquidity to a DEX pool to earn swap fees, or redeem your pool shares for XTZ and tokens.", "/liquidity-dex", "Manage Liquidity", "trading"],
