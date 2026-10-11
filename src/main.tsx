@@ -9,6 +9,8 @@ import { SetupPage } from "./pages/SetupPage";
 import { ExchangePage } from "./pages/ExchangePage";
 import { LiquidityPage } from "./pages/LiquidityPage";
 import { VotingPage } from "./pages/VotingPage";
+import { ProjectsPage } from "./pages/ProjectsPage";
+import { ProjectsSetupPage } from "./pages/ProjectsSetupPage";
 import "./styles.css";
 
 function App() {
@@ -23,6 +25,14 @@ function App() {
           <Route path="deployment-dex.html" element={<DeploymentPage kind="dex" />} />
           <Route path="deployment-delegator" element={<DeploymentPage kind="delegator" />} />
           <Route path="deployment-delegator.html" element={<DeploymentPage kind="delegator" />} />
+          <Route path="deployment-market" element={<DeploymentPage kind="market" />} />
+          <Route path="deployment-market.html" element={<DeploymentPage kind="market" />} />
+          <Route path="deployment-funding" element={<DeploymentPage kind="funding" />} />
+          <Route path="deployment-funding.html" element={<DeploymentPage kind="funding" />} />
+          <Route path="deployment-projects" element={<DeploymentPage kind="projects" />} />
+          <Route path="deployment-projects.html" element={<DeploymentPage kind="projects" />} />
+          <Route path="deployment-projects-setup" element={<ProjectsSetupPage />} />
+          <Route path="deployment-projects-setup.html" element={<ProjectsSetupPage />} />
           <Route path="deployment-dex-setup" element={<SetupPage />} />
           <Route path="deployment-dex-setup.html" element={<SetupPage />} />
           <Route path="exchange-dex" element={<ExchangePage />} />
@@ -31,6 +41,8 @@ function App() {
           <Route path="liquidity-dex.html" element={<LiquidityPage />} />
           <Route path="vote" element={<VotingPage />} />
           <Route path="vote.html" element={<VotingPage />} />
+          <Route path="projects" element={<ProjectsPage />} />
+          <Route path="projects.html" element={<ProjectsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

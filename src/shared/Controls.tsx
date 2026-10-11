@@ -45,8 +45,8 @@ export function NetworkWallet({ wallet }: { wallet: ReturnType<typeof useWallet>
   </>;
 }
 
-export function Page({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
-  return <main><h1>{title}</h1><p className="sub">{subtitle}</p>{children}</main>;
+export function Page({ title, subtitle, wide, children }: { title: string; subtitle: string; wide?: boolean; children: ReactNode }) {
+  return <main className={wide ? "wide" : undefined}><h1>{title}</h1><p className="sub">{subtitle}</p>{children}</main>;
 }
 
 export function Section({ title, children }: { title: string; children: ReactNode }) {

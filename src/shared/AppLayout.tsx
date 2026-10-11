@@ -8,6 +8,7 @@ export function AppLayout() {
         <NavLink to="/">Tools</NavLink>
         <NavLink to="/exchange-dex">Exchange</NavLink>
         <NavLink to="/liquidity-dex">Liquidity</NavLink>
+        <NavLink to="/projects">Projects</NavLink>
       </nav>
       <div className="tag">Web3 Portal</div>
     </header>

@@ -35,7 +35,11 @@ export function useWallet() {
       beacon = new BeaconWallet({
         name: 'BRO Builder LLC Web3',
         iconUrl: "https://www.brobuilder.llc/images/logo2.png",
-        network: { type: network as any }
+        network: { type: network as any },
+        // Beacon rejects with PEER_UNREACHABLE when the wallet has not answered
+        // within 60s by default. Large originations (BROProjects) take Temple
+        // longer than that to estimate and review.
+        requestTimeoutMs: 10 * 60_000,
       });
       toolkit.setWalletProvider(beacon);
       setTezos(toolkit);
