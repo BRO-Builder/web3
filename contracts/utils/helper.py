@@ -34,6 +34,25 @@ def helpers():
           to_bal = self.data.balances.get(tx.to_, default=0)
           self.data.balances[tx.to_] = to_bal + tx.amount
 
+    @sp.entrypoint
+    def update_operators(self, batch):
+      """Accepted and ignored, since this stub has no operator checks."""
+      sp.cast(batch, t.update_operators_params)
+
+    @sp.onchain_view()
+    def get_balance_of(self, requests):
+      """Same shape as fa2_lib's OnchainviewBalanceOf view."""
+      sp.cast(requests, list[t.balance_of_request])
+      return [
+        sp.cast(
+          sp.record(
+            request=req, balance=self.data.balances.get(req.owner, default=0)
+          ),
+          t.balance_of_response,
+        )
+        for req in requests
+      ]
+
 
   class DexStub(sp.Contract):
     """Stand-in for the DEX, so BRODelegator can be tested in isolation.
