@@ -106,3 +106,16 @@ def helpers():
         sp.mutez(0),
         c,
       )
+
+
+  class ProjectsStub(sp.Contract):
+    """Stand-in for BROProjects, so BROFunding can be tested in isolation.
+    Records the last `launch` call."""
+
+    def __init__(self):
+      self.data.launched = sp.cast(None, sp.option[t.launch_params])
+
+    @sp.entrypoint
+    def launch(self, params):
+      sp.cast(params, t.launch_params)
+      self.data.launched = sp.Some(params)

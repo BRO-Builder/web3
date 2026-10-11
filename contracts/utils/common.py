@@ -1,6 +1,6 @@
 """Shared types for the BRO contracts.
 
-The DEX, BRODelegator, BROLedger and BROMarketAssistant import this module
+The DEX, BRODelegator, BROFunding, BROProjects and BROMarketAssistant import this module
 so the cross-contract call parameters and the FA2 types are defined once.
 """
 
@@ -55,7 +55,8 @@ def t():
   # ledger -> market assistant: pay BRO out of the reserve
   cover_params: type = sp.record(to_=sp.address, amount=sp.nat)
 
-  # BROLedger project types (USD amounts are nat cents)
+  # Project types (USD amounts are nat cents). A project is listed and
+  # funded on BROFunding, then launched on BROProjects under the same id.
   site: type = sp.record(
     street=sp.string, city=sp.string, state=sp.string, zip=sp.string
   )
@@ -66,56 +67,9 @@ def t():
     description=sp.string, pct_bps=sp.nat, duration_days=sp.nat
   )
 
-  milestone: type = sp.record(
-    description=sp.string,
-    pct_bps=sp.nat,
-    duration_days=sp.nat,
-    # share of the budget, fixed at submission
-    usd=sp.nat,
-    # share of the funded BRO, fixed when funding closes
-    escrow_bro=sp.nat,
-    due_at=sp.option[sp.timestamp],
-    approved_at=sp.option[sp.timestamp],
-    # usd minus the late fee, fixed at approval
-    net_usd=sp.nat,
-    late_fee_usd=sp.nat,
-    claimed=sp.bool,
-  )
-
-  project_status: type = sp.variant(
-    Funding=sp.unit,
-    Failed=sp.unit,
-    Active=sp.unit,
-    Repaying=sp.unit,
-    Repaid=sp.unit,
-    Defaulted=sp.unit,
-    Cancelled=sp.unit,
-  )
-
-  project: type = sp.record(
-    contractor=sp.address,
-    project_type=sp.string,
-    title=sp.string,
-    scope=sp.string,
-    site=site,
-    owner=owner,
-    est_completion=sp.timestamp,
-    created_at=sp.timestamp,
-    funding_deadline=sp.timestamp,
-    budget_usd=sp.nat,
-    interest_bps=sp.nat,
-    term_months=sp.nat,
-    late_fee_bps_per_day=sp.nat,
-    funded_usd=sp.nat,
-    funded_bro=sp.nat,
-    funded_at=sp.option[sp.timestamp],
-    milestones=sp.map[sp.nat, milestone],
-    current_milestone=sp.nat,
-    repaid_usd=sp.nat,
-    repaid_bro=sp.nat,
-    settled_pool_bro=sp.nat,
-    uncovered_bro=sp.nat,
-    status=project_status,
+  # BROFunding: a milestone as listed (usd = its share of the budget)
+  milestone_terms: type = sp.record(
+    description=sp.string, pct_bps=sp.nat, duration_days=sp.nat, usd=sp.nat
   )
 
   submit_params: type = sp.record(
@@ -132,6 +86,128 @@ def t():
     milestones=list[milestone_input],
   )
 
-  investment: type = sp.record(usd=sp.nat, bro=sp.nat, settled_claimed=sp.bool)
+  funding_status: type = sp.variant(
+    Funding=sp.unit, Failed=sp.unit, Cancelled=sp.unit, Launched=sp.unit
+  )
+
+  listing: type = sp.record(
+    contractor=sp.address,
+    project_type=sp.string,
+    title=sp.string,
+    scope=sp.string,
+    site=site,
+    owner=owner,
+    est_completion=sp.timestamp,
+    created_at=sp.timestamp,
+    funding_deadline=sp.timestamp,
+    budget_usd=sp.nat,
+    interest_bps=sp.nat,
+    term_months=sp.nat,
+    late_fee_bps_per_day=sp.nat,
+    milestones=sp.map[sp.nat, milestone_terms],
+    funded_usd=sp.nat,
+    funded_bro=sp.nat,
+    funded_at=sp.option[sp.timestamp],
+    status=funding_status,
+  )
+
+  investment: type = sp.record(usd=sp.nat, bro=sp.nat)
+
+  investment_key: type = sp.record(project_id=sp.nat, investor=sp.address)
+
+  # BROFunding -> BROProjects when funding closes (the BRO is sent first)
+  launch_params: type = sp.record(
+    project_id=sp.nat,
+    contractor=sp.address,
+    budget_usd=sp.nat,
+    interest_bps=sp.nat,
+    term_months=sp.nat,
+    late_fee_bps_per_day=sp.nat,
+    funded_bro=sp.nat,
+    milestones=list[
+      sp.record(pct_bps=sp.nat, duration_days=sp.nat, usd=sp.nat)
+    ],
+  )
+
+  # BROProjects: a milestone in progress
+  milestone: type = sp.record(
+    pct_bps=sp.nat,
+    duration_days=sp.nat,
+    usd=sp.nat,
+    # share of the funded BRO, fixed at launch
+    escrow_bro=sp.nat,
+    due_at=sp.option[sp.timestamp],
+    approved_at=sp.option[sp.timestamp],
+    # usd minus the late fee, fixed at approval
+    net_usd=sp.nat,
+    late_fee_usd=sp.nat,
+    claimed=sp.bool,
+  )
+
+  project_status: type = sp.variant(
+    Active=sp.unit, Repaying=sp.unit, Repaid=sp.unit, Defaulted=sp.unit
+  )
+
+  project: type = sp.record(
+    contractor=sp.address,
+    budget_usd=sp.nat,
+    interest_bps=sp.nat,
+    term_months=sp.nat,
+    late_fee_bps_per_day=sp.nat,
+    funded_bro=sp.nat,
+    funded_at=sp.timestamp,
+    milestones=sp.map[sp.nat, milestone],
+    current_milestone=sp.nat,
+    repaid_usd=sp.nat,
+    repaid_bro=sp.nat,
+    settled_pool_bro=sp.nat,
+    uncovered_bro=sp.nat,
+    status=project_status,
+  )
 
   nft_ref: type = sp.record(address=sp.address, token_id=sp.nat)
+
+
+@sp.module
+def units():
+  """Conversions and reads shared by BROFunding and BROProjects.
+  Price unit: BRO base units per USD cent, times 10^6."""
+  import t # type: ignore
+
+  def usd_to_bro(params):
+    """Cents to BRO base units, rounded down."""
+    (usd, price) = params
+    return usd * price / 1_000_000
+
+  def usd_to_bro_up(params):
+    """Cents to BRO base units, rounded up."""
+    (usd, price) = params
+    return (usd * price + 999_999) / 1_000_000
+
+  def bro_to_usd(params):
+    """BRO base units to cents, rounded down."""
+    (bro, price) = params
+    return bro * 1_000_000 / price
+
+  def market_price(market):
+    """Current BRO/USD price; the market's view rejects stale prices."""
+    sp.cast(market, sp.address)
+    return sp.view("get_price", market, (), sp.nat).unwrap_some(
+      error="PRICE_UNAVAILABLE"
+    )
+
+  def token_balance(params):
+    """`owner`'s balance of `token_id` on an FA2 with `get_balance_of`."""
+    sp.cast(
+      params, sp.record(token=sp.address, owner=sp.address, token_id=sp.nat)
+    )
+    responses = sp.view(
+      "get_balance_of",
+      params.token,
+      [sp.record(owner=params.owner, token_id=params.token_id)],
+      list[t.balance_of_response],
+    ).unwrap_some(error="BALANCE_VIEW_UNAVAILABLE")
+    balance = 0
+    for r in responses:
+      balance += r.balance
+    return balance

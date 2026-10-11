@@ -1,20 +1,20 @@
 """BROMarketAssistant: the BRO/USD price feed and the BRO/XTZ reserve that
-backs BROLedger.
+backs BROFunding and BROProjects.
 
 - A system oracle wallet pushes the BRO/USD price (`update_price`). The
-  ledger reads it through the `get_price` on-chain view, which fails once
+  contracts read it through the `get_price` on-chain view, which fails once
   the price is older than `max_price_age`.
 - The reserve absorbs the gap between USD-denominated obligations and BRO
-  token amounts: the ledger sends surplus BRO here (plain FA2 transfers)
-  and calls `cover` when it is short.
+  token amounts: BROProjects (the `ledger`) sends surplus BRO here (plain
+  FA2 transfers) and calls `cover` when it is short.
 - The admin manages the reserve: withdraws BRO / XTZ and trades on BRODex.
 
 Price unit: BRO base units per 1 USD cent, times PRICE_SCALE (10^6).
 
 Deployment order:
    1. Originate BROMarketAssistant(..., dex=<BRODex address>)
-   2. Originate BROLedger(..., market=<market address>)
-   3. Admin calls market.set_ledger(<ledger address>)
+   2. Originate BROFunding and BROProjects (see brofunding.py)
+   3. Admin calls market.set_ledger(<BROProjects address>)
 
 This is illustrative / educational code. Have it audited before using it
 with real funds.
@@ -32,7 +32,7 @@ def market():
   import t # type: ignore
 
   class BROMarketAssistant(sp.Contract):
-    """Holds the BRO/USD price and a BRO/XTZ reserve for one BROLedger."""
+    """Holds the BRO/USD price and a BRO/XTZ reserve for one BROProjects."""
 
     def __init__(
       self,
