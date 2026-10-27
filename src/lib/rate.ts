@@ -12,12 +12,17 @@ export type RateQuote = {
 };
 
 const RATE_API = "https://www.brobuilder.llc/api/bro-rate-api.php";
+const CF_PROXY = "https://cf-proxy.eidoriantan.com";
+
+function proxied(url: string) {
+  return `${CF_PROXY}/?url=${encodeURIComponent(url)}`;
+}
 
 export async function fetchRate(
   params: { address: string; loanAmount: number; termDays: number; primo: boolean },
   signal: AbortSignal,
 ): Promise<RateQuote> {
-  const response = await fetch(RATE_API, {
+  const response = await fetch(proxied(RATE_API), {
     method: "POST",
     mode: "cors",
     credentials: "omit",
