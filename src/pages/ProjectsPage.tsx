@@ -1,10 +1,11 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { LoadingButton, NetworkWallet, Page, Section, Status } from "../shared/Controls";
 import { getErrorMessage } from "../shared/contracts";
 import { fetchTokenMetadata, type TokenMetadata } from "../shared/tokenMetadata";
 import { formatUnits, parseUnits, toBigInt } from "../shared/units";
 import { isValidAddress, useWallet } from "../shared/tezos";
+import { type RateQuote, fetchRate } from "../lib/rate";
 import {
   PRICE_SCALE,
   fetchTokenBalance,
@@ -251,6 +252,42 @@ export function ProjectsPage() {
   const [repayInput, setRepayInput] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [messages, setMessages] = useState(["Idle."]);
+  const [quote, setQuote] = useState<RateQuote | null>(null);
+  const [quoteStatus, setQuoteStatus] = useState<{ loading: boolean; error: string | null }>({ loading: false, error: null });
+
+  useEffect(() => {
+    const budget = Number(form.budget);
+    const termDays = Number(form.termMonths) * 30;
+    setQuote(null);
+    setForm((current) => current.interest === "" ? current : { ...current, interest: "" });
+
+    if (!wallet.address || !(budget > 0) || !(termDays > 0)) {
+      setQuoteStatus({ loading: false, error: null });
+      return;
+    }
+
+    const controller = new AbortController();
+    setQuoteStatus({ loading: true, error: null });
+    const timer = setTimeout(async () => {
+      try {
+        const result = await fetchRate(
+          { address: wallet.address!, loanAmount: budget, termDays, primo: true },
+          controller.signal,
+        );
+        setQuote(result);
+        setForm((current) => ({ ...current, interest: result.totalRatePct.toFixed(2) }));
+        setQuoteStatus({ loading: false, error: null });
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setQuoteStatus({ loading: false, error: getErrorMessage(error) });
+      }
+    }, 500);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [wallet.address, form.budget, form.termMonths]);
 
   function log(message: string) {
     setMessages((current) => [...current, message]);
@@ -411,6 +448,12 @@ export function ProjectsPage() {
     const term = Number(form.termMonths);
     const deadline = new Date(form.fundingDeadline);
     const completion = new Date(form.estCompletion);
+
+    if (quoteStatus.loading) return { error: "Wait for the interest rate quote to finish." };
+    if (!quote || !form.interest) return { error: "No interest rate quote yet. Connect a wallet and enter a budget and term." };
+    if (parseUnits(form.interest, 2)! > 5000n) {
+      return { error: `The quoted interest of ${form.interest}% exceeds the 50% contract limit. Choose a shorter term.` };
+    }
 
     if (!form.title.trim() || !form.scope.trim()) return { error: "Enter a project title and scope." };
     if (!budget || budget <= 0n) return { error: "Budget must be a positive USD amount with at most 2 decimals." };
@@ -658,10 +701,22 @@ export function ProjectsPage() {
         <label>Estimated completion<input type="date" value={form.estCompletion} onChange={updateForm("estCompletion")} /></label>
         <label>Budget (USD)<input type="number" min="0" step="0.01" value={form.budget} onChange={updateForm("budget")} placeholder="e.g. 25000" /></label>
         <label>Funding deadline<input type="datetime-local" value={form.fundingDeadline} onChange={updateForm("fundingDeadline")} /></label>
-        <label>Interest rate (%)<input type="number" min="0.5" max="50" step="0.01" value={form.interest} onChange={updateForm("interest")} /></label>
+        <label>Total interest for term (%)
+          <input type="number" value={form.interest} readOnly placeholder={wallet.address ? "Enter budget and term" : "Connect a wallet"} />
+        </label>
         <label>Repayment term (months)<input type="number" min="1" max="60" value={form.termMonths} onChange={updateForm("termMonths")} /></label>
       </div>
-      <p className="hint">Interest must be between 0.5% and 50%; the term between 1 and 60 months. The late fee is set on BROFunding and the grace period on BROProjects. Site and owner details are stored on-chain in plain text.</p>
+      {quoteStatus.loading && <p className="hint">Fetching rate…</p>}
+      {quoteStatus.error && <p className="hint">Could not get a rate: {quoteStatus.error}</p>}
+      {quote && <div className="info">
+        {[
+          `Risk: ${quote.riskCategory} (score ${quote.totalScore}/100, ${quote.selfReportedPoints} self-reported)`,
+          `Rate: ${quote.monthlyRatePct}% per month, ${quote.dailyRatePct}% per day after the ${quote.billableDays}-day minimum`,
+          `Interest: ${formatUsd(BigInt(Math.round(quote.totalInterestUsd * 100)))} · Repayment: ${formatUsd(BigInt(Math.round(quote.totalRepaymentUsd * 100)))}`,
+          ...quote.limitations.map((item) => `• ${item}`),
+        ].join("\n")}
+      </div>}
+      <p className="hint">Interest is quoted by the BRO rate API for your wallet, budget and term, and applied as a flat percentage of the budget. It must be between 0.5% and 50%; the term between 1 and 60 months.</p>
 
       <h4>Milestones <span className={`tag ${milestoneTotal === 10000n ? "ok" : "warn"}`}>{formatBps(milestoneTotal)} of budget</span></h4>
       <div className="table-wrap">
