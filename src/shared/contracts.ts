@@ -104,7 +104,7 @@ export function createDexStorage(
 export function createMarketStorage(values: {
   admin: string;
   oracle: string;
-  dex: string;
+  fundingWallet: string;
   tokenAddress: string;
   tokenId: number;
   maxPriceAge: number;
@@ -116,7 +116,7 @@ export function createMarketStorage(values: {
     admin: values.admin,
     oracle: values.oracle,
     ledger: null,
-    dex: values.dex,
+    funding_wallet: values.fundingWallet,
     token_address: values.tokenAddress,
     token_id: values.tokenId,
     price: 0,

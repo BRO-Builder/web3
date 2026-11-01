@@ -81,7 +81,7 @@ type System = {
   price: bigint;
   priceUpdatedAt: string;
   maxPriceAge: bigint;
-  reserve: bigint | null;
+  fundingWallet: string;
   projects: Project[];
 };
 
@@ -365,7 +365,7 @@ export function ProjectsPage() {
         price: toBigInt(marketStorage.price),
         priceUpdatedAt: marketStorage.price_updated_at,
         maxPriceAge: toBigInt(marketStorage.max_price_age),
-        reserve: await fetchTokenBalance(wallet.selected.api, fundingStorage.market, fundingStorage.token_address, tokenId),
+        fundingWallet: marketStorage.funding_wallet,
         projects,
       });
       const selection = keepSelection ? selectedId : null;
@@ -653,7 +653,7 @@ export function ProjectsPage() {
           `Oracle: ${system.oracle}`,
           `Token: ${system.token.symbol} (${system.tokenAddress}, id ${system.tokenId})`,
           `Price: ${system.price > 0n ? `$${usdFromPrice(system.price, decimals)} per ${symbol}` : "not set"}, updated ${system.price > 0n ? formatDate(system.priceUpdatedAt) : "never"}${stale ? "  (STALE)" : ""}`,
-          `Reserve: ${system.reserve === null ? "unknown" : formatBro(system.reserve)}`,
+          `Funding wallet: ${system.fundingWallet}`,
         ].join("\n")}
       </div>}
     </Section>
@@ -661,7 +661,7 @@ export function ProjectsPage() {
     {system && (!fundingLinked || !marketLinked) && <div className="note">
       <strong>Setup incomplete:</strong>{" "}
       {!fundingLinked && "BROFunding is not linked to this BROProjects, so fully funded projects cannot launch. "}
-      {!marketLinked && "The market assistant is not linked to this BROProjects, so claims and settlements that need the reserve will fail. "}
+      {!marketLinked && "The market assistant is not linked to this BROProjects, so claims and settlements that need funding-wallet coverage will fail. "}
       <Link to="/deployment-projects-setup">Open the projects setup page &rarr;</Link>
     </div>}
 
@@ -672,7 +672,7 @@ export function ProjectsPage() {
           <LoadingButton loading={busy === "price"} disabled={!isOracle} onClick={updatePrice}>Push Price</LoadingButton>
         </div>
       </Action>
-      <p className="hint">Linking, the approver NFT, reserve funding, rules, pausing and admin transfers are on the <Link to="/deployment-projects-setup">projects setup page</Link>.</p>
+      <p className="hint">Linking, the approver NFT, funding-wallet setup, rules, pausing and admin transfers are on the <Link to="/deployment-projects-setup">projects setup page</Link>.</p>
     </Section>}
 
     {system && <Section title="5. Submit a Project">

@@ -53,7 +53,7 @@ const PAGE_TEXT: Record<DeploymentKind, { title: string; subtitle: string; secti
   },
   market: {
     title: "Deploy BROMarketAssistant",
-    subtitle: "Connect a wallet, configure the price oracle and BRO reserve, then originate the market assistant.",
+    subtitle: "Connect a wallet, configure the price oracle and funding wallet, then originate the market assistant.",
     section: "3. Market Configuration",
   },
   funding: {
@@ -138,7 +138,7 @@ function validateDelegatorForm(values: FormValues, connectedAddress: string) {
 function validateMarketForm(values: FormValues, connectedAddress: string) {
   const admin = values.adminAddress?.trim() || connectedAddress;
   const oracle = values.oracleAddress?.trim() || connectedAddress;
-  const dex = values.dexAddress?.trim() ?? "";
+  const fundingWallet = values.fundingWalletAddress?.trim() ?? "";
   const tokenAddress = values.tokenAddress?.trim() ?? "";
   const tokenId = Number(values.tokenId);
   const maxPriceAge = Number(values.maxPriceAge);
@@ -146,8 +146,8 @@ function validateMarketForm(values: FormValues, connectedAddress: string) {
   if (!isValidAddress(tokenAddress)) {
     return { error: "Enter a valid BRO FA2 token contract address." };
   }
-  if (!isValidAddress(dex)) {
-    return { error: "Enter a valid BRODex contract address." };
+  if (!isValidAddress(fundingWallet)) {
+    return { error: "Enter a valid funding wallet address." };
   }
   if (!Number.isInteger(tokenId) || tokenId < 0) {
     return { error: "Token ID must be a non-negative integer." };
@@ -162,7 +162,7 @@ function validateMarketForm(values: FormValues, connectedAddress: string) {
     return { error: "Invalid oracle address." };
   }
 
-  return { value: { admin, oracle, dex, tokenAddress, tokenId, maxPriceAge } };
+  return { value: { admin, oracle, fundingWallet, tokenAddress, tokenId, maxPriceAge } };
 }
 
 function validateFundingForm(values: FormValues, connectedAddress: string) {
@@ -296,14 +296,14 @@ function MarketFields({ values, onChange }: FieldSetProps) {
   return <>
     <Field label="BRO token contract address">
       <TextInput value={values.tokenAddress ?? ""} onChange={onChange("tokenAddress")} placeholder="KT1..." />
-      <p className="hint">The FA2 contract of the BRO token held in the reserve.</p>
+      <p className="hint">The FA2 contract used by the funding wallet.</p>
     </Field>
     <Field label="Token ID">
       <TextInput type="number" value={values.tokenId ?? "0"} onChange={onChange("tokenId")} min="0" />
     </Field>
-    <Field label="BRODex address">
-      <TextInput value={values.dexAddress ?? ""} onChange={onChange("dexAddress")} placeholder="KT1..." />
-      <p className="hint">The BRO/XTZ DEX the admin trades the reserve against.</p>
+    <Field label="Funding wallet address">
+      <TextInput value={values.fundingWalletAddress ?? ""} onChange={onChange("fundingWalletAddress")} placeholder="tz1..." />
+      <p className="hint">The wallet holding surplus BRO and funding shortfalls. It must authorize this market as an FA2 operator.</p>
     </Field>
     <Field label="Oracle address">
       <TextInput value={values.oracleAddress ?? ""} onChange={onChange("oracleAddress")} placeholder="Defaults to the connected wallet" />
@@ -315,7 +315,7 @@ function MarketFields({ values, onChange }: FieldSetProps) {
     </Field>
     <Field label="Admin address">
       <TextInput value={values.adminAddress ?? ""} onChange={onChange("adminAddress")} placeholder="Defaults to the connected wallet" />
-      <p className="hint">Links BROProjects (<code>set_ledger</code>), changes the oracle, and manages the reserve.</p>
+      <p className="hint">Links BROProjects (<code>set_ledger</code>) and changes the oracle and funding wallet.</p>
     </Field>
   </>;
 }
@@ -509,13 +509,13 @@ export function DeploymentPage({ kind }: { kind: DeploymentKind }) {
       <strong>Deployment order:</strong> deploy this vault first, deploy the DEX with this vault address, then use the pool setup page to call the vault's one-time <code>set_dex</code> entrypoint.
     </div>}
     {kind === "market" && <div className="note">
-      <strong>Deployment order:</strong> 1. this market assistant, 2. <a href="/deployment-funding">BROFunding</a>, 3. <a href="/deployment-projects">BROProjects</a>, then link them and fund the reserve on the <a href="/deployment-projects-setup">projects setup page</a>.
+      <strong>Deployment order:</strong> 1. this market assistant, 2. <a href="/deployment-funding">BROFunding</a>, 3. <a href="/deployment-projects">BROProjects</a>, then link them and authorize the funding wallet on the <a href="/deployment-projects-setup">projects setup page</a>.
     </div>}
     {kind === "funding" && <div className="note">
       <strong>Next:</strong> deploy <a href="/deployment-projects">BROProjects</a> with this contract's address, then use the <a href="/deployment-projects-setup">projects setup page</a> to call <code>set_projects</code> (one-time). Investments that complete funding fail until it is linked.
     </div>}
     {kind === "projects" && <div className="note">
-      <strong>After deploying:</strong> use the <a href="/deployment-projects-setup">projects setup page</a> to link BROFunding (<code>set_projects</code>) and the market (<code>set_ledger</code>) to this contract, fund the BRO reserve, push the first price, and set the approver NFT.
+      <strong>After deploying:</strong> use the <a href="/deployment-projects-setup">projects setup page</a> to link BROFunding (<code>set_projects</code>) and the market (<code>set_ledger</code>) to this contract, authorize the funding wallet, push the first price, and set the approver NFT.
     </div>}
     <LoadingButton className="deploy" loading={deploying} disabled={!wallet.address} onClick={() => void deploy()}>
       Deploy Contract

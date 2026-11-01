@@ -6,13 +6,17 @@ settlement.
   per-milestone escrow and the first milestone falls due.
 - Milestones are approved by the admin or any holder of the configured
   NFT. On claim the contractor receives BRO worth exactly the milestone's
-  USD amount minus late fees; the market assistant takes any surplus
-  escrow and covers any shortfall.
+  USD amount minus late fees. Surplus escrow goes to the funding wallet,
+  and any shortfall is paid from it through the market assistant's
+  `cover` entrypoint.
 - The contractor repays budget + interest in USD (converted at the price
   on the day of each installment). Investors are owed their deposit plus
-  interest in BRO; the market assistant takes the excess or covers the
-  gap as far as its reserve allows. Investor shares are read from
+  interest in BRO; the funding wallet takes the excess or covers the gap
+  as far as its balance allows. Investor shares are read from
   BROFunding's `get_investment` view at payout time.
+- The funding wallet is a plain tz wallet. Its address is read from the
+  market assistant's `get_funding_wallet` view. The wallet must have made
+  the market assistant an FA2 operator of its BRO so `cover` can work.
 
 Units: USD is nat cents; price is BRO base units per cent, times 10^6.
 See brofunding.py for the deployment order.
@@ -83,8 +87,8 @@ def projects():
 
     @sp.private(with_storage="read-only", with_operations=True)
     def market_cover_(self, params):
-      """Have the market assistant pay BRO from its reserve (skipped for
-      zero amounts)."""
+      """Have the market assistant pay BRO out of the funding wallet
+      (skipped for zero amounts)."""
       sp.cast(params, t.cover_params)
       if params.amount > 0:
         contract = sp.contract(
@@ -110,13 +114,15 @@ def projects():
       return ok
 
     @sp.private(with_storage="read-write")
-    def settle_(self, project_id):
+    def settle_(self, params):
       """Fix the pool investors split: repaid BRO plus unclaimed escrow,
-      trimmed to their entitlement or topped up by the market as far as
-      its reserve allows. Returns the BRO the caller must send to the
-      market (`surplus`) and request from it (`cover`)."""
-      sp.cast(project_id, sp.nat)
-      p = self.data.projects[project_id]
+      trimmed to their entitlement or topped up from the funding wallet as
+      far as its balance allows. `wallet` is the funding wallet address,
+      read by the caller from the market assistant. Returns the BRO the
+      caller must send to the wallet (`surplus`) and request from it
+      (`cover`)."""
+      sp.cast(params, sp.record(project_id=sp.nat, wallet=sp.address))
+      p = self.data.projects[params.project_id]
       unclaimed = 0
       for ms in p.milestones.values():
         if not ms.claimed:
@@ -133,7 +139,7 @@ def projects():
         reserve = units.token_balance(
           sp.record(
             token=self.data.token_address,
-            owner=self.data.market,
+            owner=params.wallet,
             token_id=self.data.token_id,
           )
         )
@@ -141,7 +147,7 @@ def projects():
         p.uncovered_bro = sp.as_nat(shortfall - cover)
         pool += cover
       p.settled_pool_bro = pool
-      self.data.projects[project_id] = p
+      self.data.projects[params.project_id] = p
       return sp.record(surplus=surplus, cover=cover)
 
     # ------------------------------------------------------------------
@@ -189,7 +195,7 @@ def projects():
       the rounding remainder, and start the first deadline."""
       sp.cast(params, t.launch_params)
       assert sp.sender == self.data.funding, "NOT_FUNDING_CONTRACT"
-      assert not self.data.projects.contains(params.project_id), "ALREADY_LAUNCHED"
+      assert not params.project_id in self.data.projects, "ALREADY_LAUNCHED"
 
       milestones = sp.cast({}, sp.map[sp.nat, t.milestone])
       n = sp.len(params.milestones)
@@ -238,8 +244,10 @@ def projects():
     @sp.entrypoint
     def claim_milestone(self, project_id):
       """Pay out every approved, unclaimed milestone: BRO worth their net
-      USD at today's price. Surplus escrow goes to the market; a shortfall
-      is paid by the market (the claim fails if its reserve is short)."""
+      USD at today's price. Surplus escrow goes to the funding wallet; a
+      shortfall is paid from the wallet via the market assistant (the
+      claim fails if the wallet is short or has not approved the market
+      as FA2 operator)."""
       sp.cast(project_id, sp.nat)
       assert not self.data.paused, "PAUSED"
       p = self.data.projects.get(project_id, error="PROJECT_NOT_FOUND")
@@ -261,13 +269,16 @@ def projects():
       self.data.projects[project_id] = p
 
       if escrow >= need:
+        wallet = sp.view(
+          "get_funding_wallet", self.data.market, (), sp.address
+        ).unwrap_some(error="MARKET_VIEW_UNAVAILABLE")
         self.token_transfer_(
           sp.record(from_=sp.self_address, to_=p.contractor, amount=need)
         )
         self.token_transfer_(
           sp.record(
             from_=sp.self_address,
-            to_=self.data.market,
+            to_=wallet,
             amount=sp.as_nat(escrow - need),
           )
         )
@@ -303,10 +314,15 @@ def projects():
         sp.record(from_=sp.sender, to_=sp.self_address, amount=bro)
       )
       if p.repaid_usd == due:
-        settled = self.settle_(params.project_id)
+        wallet = sp.view(
+          "get_funding_wallet", self.data.market, (), sp.address
+        ).unwrap_some(error="MARKET_VIEW_UNAVAILABLE")
+        settled = self.settle_(
+          sp.record(project_id=params.project_id, wallet=wallet)
+        )
         self.token_transfer_(
           sp.record(
-            from_=sp.self_address, to_=self.data.market, amount=settled.surplus
+            from_=sp.self_address, to_=wallet, amount=settled.surplus
           )
         )
         self.market_cover_(sp.record(to_=sp.self_address, amount=settled.cover))
@@ -325,7 +341,7 @@ def projects():
         p.status.is_variant.Repaid() or p.status.is_variant.Defaulted()
       ), "NOT_SETTLED"
       key = (project_id, sp.sender)
-      assert not self.data.payouts_claimed.contains(key), "ALREADY_CLAIMED"
+      assert not key in self.data.payouts_claimed, "ALREADY_CLAIMED"
       inv = sp.view(
         "get_investment",
         self.data.funding,
@@ -403,11 +419,12 @@ def projects():
 
       p.status = sp.variant.Defaulted()
       self.data.projects[project_id] = p
-      settled = self.settle_(project_id)
+      wallet = sp.view(
+        "get_funding_wallet", self.data.market, (), sp.address
+      ).unwrap_some(error="MARKET_VIEW_UNAVAILABLE")
+      settled = self.settle_(sp.record(project_id=project_id, wallet=wallet))
       self.token_transfer_(
-        sp.record(
-          from_=sp.self_address, to_=self.data.market, amount=settled.surplus
-        )
+        sp.record(from_=sp.self_address, to_=wallet, amount=settled.surplus)
       )
       self.market_cover_(sp.record(to_=sp.self_address, amount=settled.cover))
 
@@ -436,7 +453,7 @@ def test_projects():
   bob = sp.test_account("Bob")
   carol = sp.test_account("Carol")
   approver = sp.test_account("Approver")
-  dex = sp.test_account("Dex")
+  wallet = sp.test_account("FundingWallet")
 
   scenario = sp.test_scenario(
     "build/BROProjects", [t, units, helpers, market, funding, projects]
@@ -456,7 +473,7 @@ def test_projects():
     metadata=sp.big_map(),
     admin=admin.address,
     oracle=oracle.address,
-    dex=dex.address,
+    funding_wallet=wallet.address,
     token_address=token.address,
     token_id=0,
     max_price_age=3600,
@@ -484,6 +501,26 @@ def test_projects():
   scenario += bp
   bf.set_projects(bp.address, _sender=admin)
   ma.set_ledger(bp.address, _sender=admin)
+  # the funding wallet lets the market assistant pull BRO for `cover`
+  token.update_operators(
+    [sp.variant.add_operator(
+      sp.record(owner=wallet.address, operator=ma.address, token_id=0)
+    )],
+    _sender=wallet.address,
+  )
+
+  def approve(owner, operator):
+    """Make `operator` an FA2 operator of the owner's BRO."""
+    token.update_operators(
+      [sp.variant.add_operator(
+        sp.record(owner=owner.address, operator=operator.address, token_id=0)
+      )],
+      _sender=owner,
+    )
+
+  # investors let BROFunding pull their deposits
+  approve(alice, bf)
+  approve(bob, bf)
 
   def bal(account):
     return token.data.balances.get(account, sp.nat(0))
@@ -497,7 +534,7 @@ def test_projects():
       + bal(contractor.address)
       + bal(alice.address)
       + bal(bob.address)
-      + bal(ma.address)
+      + bal(wallet.address)
       + bal(bf.address)
       + bal(bp.address)
     )
@@ -506,7 +543,7 @@ def test_projects():
     [
       sp.record(
         from_=admin.address,
-        txs=[sp.record(to_=ma.address, token_id=0, amount=2_000_000)],
+        txs=[sp.record(to_=wallet.address, token_id=0, amount=2_000_000)],
       )
     ],
     _sender=admin,
@@ -564,17 +601,17 @@ def test_projects():
   bp.claim_milestone(0, _sender=carol, _now=_ts(5 * DAY), _valid=False, _exception="NOT_CONTRACTOR")
   bp.claim_milestone(0, _sender=contractor, _now=_ts(5 * DAY))
   scenario.verify(bal(contractor.address) == 5_500_000)
-  scenario.verify(bal(ma.address) == 2_000_000)
+  scenario.verify(bal(wallet.address) == 2_000_000)
   bp.claim_milestone(0, _sender=contractor, _now=_ts(5 * DAY), _valid=False, _exception="NOTHING_TO_CLAIM")
 
-  scenario.p("M1 by an NFT holder after BRO doubled: surplus escrow to the market")
+  scenario.p("M1 by an NFT holder after BRO doubled: surplus escrow to the funding wallet")
   bp.approve_milestone(0, _sender=approver, _now=_ts(6 * DAY))
   price(5_000_000, _ts(6 * DAY))
   bp.claim_milestone(0, _sender=contractor, _now=_ts(6 * DAY))
   scenario.verify(bal(contractor.address) == 5_650_000)
-  scenario.verify(bal(ma.address) == 2_150_000)
+  scenario.verify(bal(wallet.address) == 2_150_000)
 
-  scenario.p("M2 approved 2 days + 1 second late (3 days fee) after BRO halved: market covers")
+  scenario.p("M2 approved 2 days + 1 second late (3 days fee) after BRO halved: wallet covers")
   late = _ts(18 * DAY + 1)
   bp.approve_milestone(0, _sender=admin, _now=late)
   p0 = bp.data.projects[0]
@@ -585,26 +622,34 @@ def test_projects():
   price(20_000_000, late)
   bp.claim_milestone(0, _sender=contractor, _now=late)
   scenario.verify(bal(contractor.address) == 6_038_000)
-  scenario.verify(bal(ma.address) == 1_962_000)
+  scenario.verify(bal(wallet.address) == 1_962_000)
   scenario.verify(bal(bp.address) == 0)
   scenario.verify(bp.data.projects[0].status == sp.variant.Repaying(sp.unit))
   bp.claim_payout(0, _sender=alice, _now=late, _valid=False, _exception="NOT_SETTLED")
 
   scenario.p("Repay 108,000 cents in two installments at 20 BRO units per cent")
   scenario.verify(bp.get_amount_due(0) == 108_000)
+  # without operator approval the BRO pull fails and nothing changes
+  bp.repay(
+    sp.record(project_id=0, usd_cents=50_000), _sender=contractor, _now=late,
+    _valid=False,
+  )
+  scenario.verify(bp.get_amount_due(0) == 108_000)
+  scenario.verify(bal(contractor.address) == 6_038_000)
+  approve(contractor, bp)
   bp.repay(sp.record(project_id=0, usd_cents=50_000), _sender=contractor, _now=late)
   scenario.verify(bal(contractor.address) == 5_038_000)
+  # RESTORED: second installment, capped at the 58,000 cents still owed
   scenario.verify(bp.get_amount_due(0) == 58_000)
-  # overpaying is capped at the 58,000 cents still owed
   bp.repay(sp.record(project_id=0, usd_cents=100_000), _sender=contractor, _now=late)
   scenario.verify(bal(contractor.address) == 3_878_000)
   p0 = bp.data.projects[0]
   scenario.verify(p0.status == sp.variant.Repaid(sp.unit))
   scenario.verify(p0.repaid_bro == 2_160_000)
-  # entitlement is 1,080,000 BRO; the other 1,080,000 goes to the market
+  # entitlement is 1,080,000 BRO; the other 1,080,000 goes to the funding wallet
   scenario.verify(p0.settled_pool_bro == 1_080_000)
   scenario.verify(p0.uncovered_bro == 0)
-  scenario.verify(bal(ma.address) == 3_042_000)
+  scenario.verify(bal(wallet.address) == 3_042_000)
 
   bp.claim_payout(0, _sender=alice, _now=late)
   bp.claim_payout(0, _sender=bob, _now=late)
@@ -616,7 +661,7 @@ def test_projects():
   scenario.verify(total() == 25_000_000)
 
   # ----------------------------------------------------------------------
-  scenario.h2("Project 1: BRO rose before repayment, market covers the gap")
+  scenario.h2("Project 1: BRO rose before repayment, wallet covers the gap")
   t1 = 20 * DAY
   bf.submit_project(
     _project(_ts(t1 + 10 * DAY), 10_000, 1000, 6, [(10000, 5)]),
@@ -637,13 +682,13 @@ def test_projects():
   scenario.verify(p1.repaid_bro == 55_000)
   scenario.verify(p1.settled_pool_bro == 110_000)
   scenario.verify(p1.uncovered_bro == 0)
-  scenario.verify(bal(ma.address) == 2_987_000)
+  scenario.verify(bal(wallet.address) == 2_987_000)
   bp.claim_payout(1, _sender=alice, _now=_ts(t1 + 2 * DAY))
   scenario.verify(bal(alice.address) == 5_058_000)
   scenario.verify(bal(bp.address) == 0)
 
   # ----------------------------------------------------------------------
-  scenario.h2("Project 2: default with a thin market reserve")
+  scenario.h2("Project 2: default with a thin funding wallet")
   t2 = 25 * DAY
   bf.submit_project(
     _project(_ts(t2 + 10 * DAY), 10_000, 1000, 6, [(5000, 5), (5000, 5)]),
@@ -657,18 +702,27 @@ def test_projects():
   bp.claim_milestone(2, _sender=contractor, _now=_ts(t2 + DAY))
   scenario.verify(bal(contractor.address) == 3_973_000)
   # M1 falls due at t2 + 6 days and is never delivered
-  ma.withdraw_token(sp.record(to_=admin.address, amount=2_977_000), _sender=admin)
-  scenario.verify(bal(ma.address) == 10_000)
+  # the wallet owner moves most of its BRO out directly
+  token.transfer(
+    [
+      sp.record(
+        from_=wallet.address,
+        txs=[sp.record(to_=admin.address, token_id=0, amount=2_977_000)],
+      )
+    ],
+    _sender=wallet,
+  )
+  scenario.verify(bal(wallet.address) == 10_000)
   bp.mark_default(2, _sender=admin, _now=_ts(t2 + 13 * DAY), _valid=False, _exception="NOT_OVERDUE")
   bp.mark_default(2, _sender=carol, _now=_ts(t2 + 13 * DAY + 1), _valid=False, _exception="NOT_APPROVER")
   bp.mark_default(0, _sender=admin, _now=_ts(t2 + 13 * DAY + 1), _valid=False, _exception="NOT_DEFAULTABLE")
   bp.mark_default(2, _sender=approver, _now=_ts(t2 + 13 * DAY + 1))
   p2 = bp.data.projects[2]
   scenario.verify(p2.status == sp.variant.Defaulted(sp.unit))
-  # pool: 50,000 unclaimed escrow + 10,000 from the market; 50,000 short
+  # pool: 50,000 unclaimed escrow + 10,000 from the wallet; 50,000 short
   scenario.verify(p2.settled_pool_bro == 60_000)
   scenario.verify(p2.uncovered_bro == 50_000)
-  scenario.verify(bal(ma.address) == 0)
+  scenario.verify(bal(wallet.address) == 0)
   bp.claim_milestone(2, _sender=contractor, _now=_ts(t2 + 14 * DAY), _valid=False, _exception="NOT_ACTIVE")
   bp.approve_milestone(2, _sender=admin, _now=_ts(t2 + 14 * DAY), _valid=False, _exception="NOT_ACTIVE")
   bp.claim_payout(2, _sender=bob, _now=_ts(t2 + 14 * DAY))

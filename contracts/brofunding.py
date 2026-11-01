@@ -13,11 +13,13 @@
 - If the deadline passes first, or the admin cancels, investors refund.
 
 Deployment order:
-   1. Originate BROMarketAssistant
+   1. Originate BROMarketAssistant(..., funding_wallet=<tz wallet>)
    2. Originate BROFunding(..., market=<market address>)
    3. Originate BROProjects(..., funding=<funding address>, market=...)
    4. Admin calls funding.set_projects(<projects address>)  (one-time)
    5. Admin calls market.set_ledger(<projects address>)
+   6. The funding wallet adds the market as FA2 operator of its BRO
+      (see bromarket.py)
 
 This is illustrative / educational code. Have it audited before using it
 with real funds.
@@ -354,7 +356,8 @@ def test_funding():
   alice = sp.test_account("Alice")
   bob = sp.test_account("Bob")
   carol = sp.test_account("Carol")
-  dex = sp.test_account("Dex")
+  dave = sp.test_account("Dave")
+  wallet = sp.test_account("FundingWallet")
 
   scenario = sp.test_scenario(
     "build/BROFunding", [t, units, helpers, market, funding]
@@ -365,11 +368,12 @@ def test_funding():
   scenario += token
   for a in [alice, bob]:
     token.mint(to_=a.address, amount=5_000_000, _sender=admin)
+  token.mint(to_=dave.address, amount=1_000_000, _sender=admin)
   ma = market.BROMarketAssistant(
     metadata=sp.big_map(),
     admin=admin.address,
     oracle=oracle.address,
-    dex=dex.address,
+    funding_wallet=wallet.address,
     token_address=token.address,
     token_id=0,
     max_price_age=3600,
@@ -387,6 +391,18 @@ def test_funding():
   scenario += bf
   stub = helpers.ProjectsStub()
   scenario += stub
+
+  def approve(owner):
+    """Make BROFunding an FA2 operator of the owner's BRO."""
+    token.update_operators(
+      [sp.variant.add_operator(
+        sp.record(owner=owner.address, operator=bf.address, token_id=0)
+      )],
+      _sender=owner,
+    )
+
+  approve(alice)
+  approve(bob)
 
   def bal(account):
     return token.data.balances.get(account, sp.nat(0))
@@ -443,6 +459,14 @@ def test_funding():
     sp.record(project_id=0, max_bro=0), _sender=alice, _now=_ts(0),
     _valid=False, _exception="AMOUNT_TOO_SMALL",
   )
+  # no operator approval -> the BRO transfer fails and nothing is recorded
+  bf.invest(
+    sp.record(project_id=0, max_bro=1_000), _sender=dave, _now=_ts(0),
+    _valid=False,
+  )
+  scenario.verify(bal(dave.address) == 1_000_000)
+  scenario.verify(bf.data.projects[0].funded_usd == 0)
+  scenario.verify(~bf.data.investments.contains((0, dave.address)))
   bf.invest(sp.record(project_id=0, max_bro=600_000), _sender=alice, _now=_ts(0))
   scenario.verify(bf.data.investments[(0, alice.address)].usd == 60_000)
   scenario.verify(bf.data.projects[0].status == sp.variant.Funding(sp.unit))

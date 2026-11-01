@@ -9,12 +9,20 @@ def helpers():
 
   class DummyFA2(sp.Contract):
     """Minimal FA2 single-asset token stub, for testing only.
-    A real FA2 contract also enforces operator permissions on
-    `transfer`; this stub skips that check to keep tests short."""
+    `transfer` enforces the FA2 permission rule: the sender must be the
+    owner or an operator approved through `update_operators`. Token ids are
+    not tracked (single asset), but they are part of the operator key."""
 
     def __init__(self, admin):
       self.data.admin = admin
       self.data.balances = sp.cast(sp.big_map(), sp.big_map[sp.address, sp.nat])
+      self.data.operators = sp.cast(
+        sp.big_map(),
+        sp.big_map[
+          sp.record(owner=sp.address, operator=sp.address, token_id=sp.nat),
+          sp.unit,
+        ],
+      )
 
     @sp.entrypoint
     def mint(self, params):
@@ -28,6 +36,16 @@ def helpers():
       sp.cast(batch, t.transfer_params)
       for transfer_ in batch:
         for tx in transfer_.txs:
+          # FA2 permissions: owner, or an operator approved by the owner
+          from_record = sp.record(
+            owner=transfer_.from_,
+            operator=sp.sender,
+            token_id=tx.token_id,
+          )
+          assert (
+            sp.sender == transfer_.from_
+            or from_record in self.data.operators
+          ), "FA2_NOT_OPERATOR"
           from_bal = self.data.balances.get(transfer_.from_, default=0)
           assert from_bal >= tx.amount, "FA2_INSUFFICIENT_BALANCE"
           self.data.balances[transfer_.from_] = sp.as_nat(from_bal - tx.amount)
@@ -36,8 +54,25 @@ def helpers():
 
     @sp.entrypoint
     def update_operators(self, batch):
-      """Accepted and ignored, since this stub has no operator checks."""
+      """Add or remove operators. Only the token owner may change their
+      own operators."""
       sp.cast(batch, t.update_operators_params)
+      for upd in batch:
+        match upd:
+          case add_operator(op):
+            assert sp.sender == op.owner, "FA2_SENDER_IS_NOT_OWNER"
+            self.data.operators[
+              sp.record(
+                owner=op.owner, operator=op.operator, token_id=op.token_id
+              )
+            ] = ()
+          case remove_operator(op):
+            assert sp.sender == op.owner, "FA2_SENDER_IS_NOT_OWNER"
+            key = sp.record(
+              owner=op.owner, operator=op.operator, token_id=op.token_id
+            )
+            if key in self.data.operators:
+              del self.data.operators[key]
 
     @sp.onchain_view()
     def get_balance_of(self, requests):
