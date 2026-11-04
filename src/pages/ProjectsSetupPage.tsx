@@ -408,13 +408,13 @@ export function ProjectsSetupPage() {
           <input id="lateFee" className="grow" type="number" min="0" max="10000" value={lateFee} onChange={(event) => setLateFee(event.target.value)} />
           <LoadingButton className="secondary" loading={busy === "fee"} disabled={!isAdmin("funding")} onClick={() => setNumber("fee", "set_late_fee", lateFee, (n) => n >= 0 && n <= 10000, "Late fee must be between 0 and 10000 bps.", "funding")}>Update</LoadingButton>
         </div>
-        <p className="hint">BROFunding admin. Snapshotted into projects submitted afterwards.</p>
+        <p className="hint">BROFunding admin. Repayment late fee per day since the end date, charged once the grace period has passed. Snapshotted into projects submitted afterwards.</p>
         <label htmlFor="graceDays">Grace period (days)</label>
         <div className="row">
           <input id="graceDays" className="grow" type="number" min="0" value={graceDays} onChange={(event) => setGraceDays(event.target.value)} />
           <LoadingButton className="secondary" loading={busy === "grace"} disabled={!isAdmin("projects")} onClick={() => setNumber("grace", "set_grace_days", graceDays, (n) => n >= 0, "Grace period must be a non-negative number of days.", "projects")}>Update</LoadingButton>
         </div>
-        <p className="hint">BROProjects admin. Days past a due date or term end before a project can be defaulted. Applies to all projects immediately.</p>
+        <p className="hint">BROProjects admin. Days past a milestone due date or the approved end date before a project can be defaulted or charged a late fee. Applies to all projects immediately.</p>
         <label htmlFor="maxPriceAge">Max price age (seconds)</label>
         <div className="row">
           <input id="maxPriceAge" className="grow" type="number" min="1" value={maxPriceAge} onChange={(event) => setMaxPriceAge(event.target.value)} />

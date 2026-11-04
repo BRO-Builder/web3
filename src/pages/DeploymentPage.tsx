@@ -335,7 +335,7 @@ function FundingFields({ values, onChange }: FieldSetProps) {
     </Field>
     <Field label="Late fee (basis points per day)">
       <TextInput type="number" value={values.lateFeeBpsPerDay ?? "100"} onChange={onChange("lateFeeBpsPerDay")} min="0" max="10000" />
-      <p className="hint">Snapshotted into each project at submission and deducted from a milestone's payout for each day it is approved late. 100 bps = 1% per day.</p>
+      <p className="hint">Repayment late fee, snapshotted into each project at submission. Once the approved end date + grace has passed, every day since the end date costs this share of budget + interest (max 100%). 100 bps = 1% per day.</p>
     </Field>
     <Field label="Max milestones per project">
       <TextInput type="number" value={values.maxMilestones ?? "20"} onChange={onChange("maxMilestones")} min="1" />
@@ -366,11 +366,11 @@ function ProjectsFields({ values, onChange }: FieldSetProps) {
     </Field>
     <Field label="Grace period (days)">
       <TextInput type="number" value={values.graceDays ?? "7"} onChange={onChange("graceDays")} min="0" />
-      <p className="hint">Days past a milestone due date or the term end before a project can be marked as defaulted.</p>
+      <p className="hint">Days past a milestone due date or the approved end date before a project can be marked as defaulted. Repaying in full within the grace after the end date avoids the late fee.</p>
     </Field>
     <Field label="Admin address">
       <TextInput value={values.adminAddress ?? ""} onChange={onChange("adminAddress")} placeholder="Defaults to the connected wallet" />
-      <p className="hint">Approves milestones, sets the approver NFT and grace period, and can pause the contract.</p>
+      <p className="hint">Approves milestones and contractors' proposed end dates, sets the approver NFT and grace period, and can pause the contract.</p>
     </Field>
   </>;
 }

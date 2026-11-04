@@ -25,8 +25,6 @@ type Milestone = {
   escrowBro: bigint;
   dueAt: string | null;
   approvedAt: string | null;
-  netUsd: bigint;
-  lateFeeUsd: bigint;
   claimed: boolean;
 };
 
@@ -49,10 +47,16 @@ type Project = {
   fundedUsd: bigint;
   fundedBro: bigint;
   fundedAt: string | null;
+  // BROProjects: approved by its admin; the late fee and default start after it + grace
+  endDate: string | null;
+  // BROProjects: proposed by the contractor, waiting for the admin
+  proposedEndDate: string | null;
   milestones: Milestone[];
   currentMilestone: number;
   repaidUsd: bigint;
   repaidBro: bigint;
+  // repayment late fee in cents, as of the last repay or default
+  lateFeeUsd: bigint;
   settledPoolBro: bigint;
   uncoveredBro: bigint;
   launched: boolean;
@@ -69,6 +73,7 @@ type System = {
   fundingAdmin: string;
   fundingPaused: boolean;
   fundingProjects: string | null;
+  projectsAdmin: string;
   projectsPaused: boolean;
   graceDays: bigint;
   nft: { address: string; tokenId: string } | null;
@@ -144,8 +149,6 @@ function decodeMilestone(terms: any, progress: any | undefined): Milestone {
     escrowBro: progress ? toBigInt(progress.escrow_bro) : 0n,
     dueAt: progress ? readOption(progress.due_at) : null,
     approvedAt: progress ? readOption(progress.approved_at) : null,
-    netUsd: progress ? toBigInt(progress.net_usd) : 0n,
-    lateFeeUsd: progress ? toBigInt(progress.late_fee_usd) : 0n,
     claimed: progress ? Boolean(progress.claimed) : false,
   };
 }
@@ -169,10 +172,13 @@ function decodeProject(id: number, listing: any, runtime: any | undefined): Proj
     fundedUsd: toBigInt(listing.funded_usd),
     fundedBro: runtime ? toBigInt(runtime.funded_bro) : toBigInt(listing.funded_bro),
     fundedAt: runtime ? runtime.funded_at : readOption(listing.funded_at),
+    endDate: runtime ? readOption(runtime.end_date) : null,
+    proposedEndDate: runtime ? readOption(runtime.proposed_end_date) : null,
     milestones: sortedValues(listing.milestones).map((terms, index) => decodeMilestone(terms, progress[index])),
     currentMilestone: runtime ? Number(toBigInt(runtime.current_milestone)) : 0,
     repaidUsd: runtime ? toBigInt(runtime.repaid_usd) : 0n,
     repaidBro: runtime ? toBigInt(runtime.repaid_bro) : 0n,
+    lateFeeUsd: runtime ? toBigInt(runtime.late_fee_usd) : 0n,
     settledPoolBro: runtime ? toBigInt(runtime.settled_pool_bro) : 0n,
     uncoveredBro: runtime ? toBigInt(runtime.uncovered_bro) : 0n,
     launched: Boolean(runtime),
@@ -208,17 +214,46 @@ function usdToBro(cents: bigint, price: bigint) {
   return cents * price / PRICE_SCALE;
 }
 
-function amountDue(project: Project) {
-  return project.budgetUsd * (10000n + project.interestBps) / 10000n - project.repaidUsd;
+const DAY_MS = 86400_000;
+
+// Budget plus interest, in cents (without the late fee).
+function baseDue(project: Project) {
+  return project.budgetUsd * (10000n + project.interestBps) / 10000n;
 }
 
+// Mirrors BROProjects `late_fee`: nothing without an approved end date or up
+// to end date + grace; after that, every day since the end date (rounded up,
+// grace days included) costs late_fee_bps_per_day of budget + interest,
+// capped at 100%.
+function lateFee(project: Project, graceDays: bigint, now: number) {
+  if (!project.endDate) return 0n;
+  const end = Date.parse(project.endDate);
+  if (now <= end + Number(graceDays) * DAY_MS) return 0n;
+  const lateDays = BigInt(Math.ceil((now - end) / DAY_MS));
+  const bps = lateDays * project.lateFeeBpsPerDay;
+  return baseDue(project) * (bps < 10000n ? bps : 10000n) / 10000n;
+}
+
+// Mirrors the `get_amount_due` view: live late fee while Active/Repaying,
+// the stored one once settled.
+function currentLateFee(project: Project, graceDays: bigint, now: number) {
+  return ["Active", "Repaying"].includes(project.status) ? lateFee(project, graceDays, now) : project.lateFeeUsd;
+}
+
+function amountDue(project: Project, graceDays: bigint, now: number) {
+  const due = baseDue(project) + currentLateFee(project, graceDays, now);
+  return due > project.repaidUsd ? due - project.repaidUsd : 0n;
+}
+
+// Mirrors `mark_default`: after the approved end date + grace, or (while
+// Active) after the current milestone's due date + grace.
 function defaultEligibleAt(project: Project, graceDays: bigint) {
-  if (!project.fundedAt) return null;
-  const grace = Number(graceDays) * 86400_000;
-  let at = Date.parse(project.fundedAt) + Number(project.termMonths) * 30 * 86400_000 + grace;
+  const grace = Number(graceDays) * DAY_MS;
+  let at: number | null = project.endDate ? Date.parse(project.endDate) + grace : null;
   const current = project.milestones[project.currentMilestone];
   if (project.status === "Active" && current?.dueAt) {
-    at = Math.min(at, Date.parse(current.dueAt) + grace);
+    const milestoneAt = Date.parse(current.dueAt) + grace;
+    at = at === null ? milestoneAt : Math.min(at, milestoneAt);
   }
   return at;
 }
@@ -250,6 +285,7 @@ export function ProjectsPage() {
   const [priceInput, setPriceInput] = useState("");
   const [investInput, setInvestInput] = useState("");
   const [repayInput, setRepayInput] = useState("");
+  const [endDateInput, setEndDateInput] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [messages, setMessages] = useState(["Idle."]);
   const [quote, setQuote] = useState<RateQuote | null>(null);
@@ -353,6 +389,7 @@ export function ProjectsPage() {
         fundingAdmin: fundingStorage.admin,
         fundingPaused: Boolean(fundingStorage.paused),
         fundingProjects: readOption<string>(fundingStorage.projects_contract),
+        projectsAdmin: projectsStorage.admin,
         projectsPaused: Boolean(projectsStorage.paused),
         graceDays: toBigInt(projectsStorage.grace_days),
         nft: nft ? { address: nft.address, tokenId: nft.token_id.toString() } : null,
@@ -384,6 +421,7 @@ export function ProjectsPage() {
     setSelectedId(id);
     setInvestInput("");
     setRepayInput("");
+    setEndDateInput("");
     try {
       await loadInvestment(id);
     } catch (error) {
@@ -522,6 +560,7 @@ export function ProjectsPage() {
   const formatBro = (units: bigint) => `${formatUnits(units, decimals)} ${symbol}`;
   const stale = system ? isPriceStale(system.price, system.priceUpdatedAt, system.maxPriceAge) : true;
   const isFundingAdmin = Boolean(system && wallet.address === system.fundingAdmin);
+  const isProjectsAdmin = Boolean(system && wallet.address === system.projectsAdmin);
   const isOracle = Boolean(system && wallet.address === system.oracle);
   const fundingLinked = Boolean(system && system.fundingProjects === system.projectsContract);
   const marketLinked = Boolean(system && system.marketLedger === system.projectsContract);
@@ -573,7 +612,7 @@ export function ProjectsPage() {
     if (p.status === "Active" && p.currentMilestone < p.milestones.length) {
       const current = p.milestones[p.currentMilestone];
       actions.push(<Action key="approve" title={`Approve milestone ${p.currentMilestone + 1}`} hint={<>
-        BROProjects admin or approver NFT holder. "{current.description}" is due {formatDate(current.dueAt)}; each late day costs {formatBps(p.lateFeeBpsPerDay)} of its {formatUsd(current.usd)}.
+        BROProjects admin or approver NFT holder. "{current.description}" is due {formatDate(current.dueAt)}. It pays its full {formatUsd(current.usd)} even if approved late, but a project more than {sys.graceDays.toString()} grace day(s) past this due date can be defaulted.
       </>}>
         <LoadingButton loading={busy === "approve"} disabled={!wallet.address} onClick={() => void run("approve", "approve_milestone", (toolkit) => contractCall(toolkit, sys.projectsContract, "approve_milestone", p.id.toString()))}>Approve Milestone</LoadingButton>
       </Action>);
@@ -581,7 +620,7 @@ export function ProjectsPage() {
 
     if (p.status === "Active" && isContractor) {
       const claimable = p.milestones.slice(0, p.currentMilestone).filter((milestone) => !milestone.claimed);
-      const netUsd = claimable.reduce((sum, milestone) => sum + milestone.netUsd, 0n);
+      const netUsd = claimable.reduce((sum, milestone) => sum + milestone.usd, 0n);
       actions.push(<Action key="claim" title="Claim approved milestones" hint={claimable.length
         ? `${claimable.length} milestone(s) worth ${formatUsd(netUsd)}${stale ? "; the price is stale, so claiming will fail until it is refreshed" : `, about ${formatBro(usdToBro(netUsd, sys.price))} at today's price`}.${sys.projectsPaused ? " BROProjects is paused." : ""}`
         : "Nothing approved to claim yet."}>
@@ -590,10 +629,18 @@ export function ProjectsPage() {
     }
 
     if (p.status === "Repaying") {
-      const due = amountDue(p);
+      const due = amountDue(p, sys.graceDays, now);
+      const fee = lateFee(p, sys.graceDays, now);
+      const feeFrom = p.endDate ? Date.parse(p.endDate) + Number(sys.graceDays) * DAY_MS : null;
       actions.push(<Action key="repay" title="Repay" hint={<>
-        {formatUsd(due)} still owed (budget + {formatBps(p.interestBps)} interest), paid in {symbol} at the price on the day of each installment
-        {stale ? ". The price is stale; repayment will fail until it is refreshed." : `, about ${formatBro(usdToBroUp(due, sys.price))} today.`} Anyone may pay.
+        {formatUsd(due)} still owed (budget + {formatBps(p.interestBps)} interest{fee > 0n ? ` + ${formatUsd(fee)} late fee` : ""}), paid in {symbol} at the price on the day of each installment.{" "}
+        {feeFrom === null
+          ? "No end date is approved yet, so no late fee applies."
+          : fee > 0n
+            ? `The late fee grows by ${formatBps(p.lateFeeBpsPerDay)} of budget + interest per day since the end date (max 100%), so pay all to stop it.`
+            : `Pay in full by ${new Date(feeFrom).toLocaleString()} to avoid a late fee; after that, every day since the end date ${formatDate(p.endDate)} costs ${formatBps(p.lateFeeBpsPerDay)}.`}
+        {stale ? " The price is stale; repayment will fail until it is refreshed." : ` That is about ${formatBro(usdToBroUp(due, sys.price))} today.`}
+        {" "}"Pay all" uses today's amount; if a new fee day starts before it is included, a small balance remains. Anyone may pay.
         This batch makes BROProjects an operator of your {symbol}, repays, then removes the operator.{sys.projectsPaused && " BROProjects is paused."}
       </>}>
         <div className="row">
@@ -611,11 +658,37 @@ export function ProjectsPage() {
       </Action>);
     }
 
+    if ((p.status === "Active" || p.status === "Repaying") && isContractor) {
+      actions.push(<Action key="propose-end" title="Propose end date" hint={`Contractor only. The BROProjects admin must approve it; until then ${p.endDate ? `the approved end date ${formatDate(p.endDate)} stays in force` : "no end date applies"}.${p.proposedEndDate ? ` This replaces the pending proposal (${formatDate(p.proposedEndDate)}).` : ""}`}>
+        <div className="row">
+          <input className="grow" type="datetime-local" value={endDateInput} onChange={(event) => setEndDateInput(event.target.value)} />
+          <LoadingButton loading={busy === "propose-end"} onClick={() => {
+            const date = new Date(endDateInput);
+            if (Number.isNaN(date.getTime())) {
+              log("Enter an end date.");
+              return;
+            }
+            void run("propose-end", "propose_end_date", (toolkit) => contractCall(toolkit, sys.projectsContract, "propose_end_date", { project_id: p.id.toString(), end_date: toTimestamp(date) }));
+          }}>Propose</LoadingButton>
+        </div>
+      </Action>);
+    }
+
+    if ((p.status === "Active" || p.status === "Repaying") && p.proposedEndDate && isProjectsAdmin) {
+      const proposed = p.proposedEndDate;
+      actions.push(<Action key="review-end" title="Review proposed end date" hint={`BROProjects admin only. The contractor proposes ${formatDate(proposed)}${p.endDate ? ` (approved now: ${formatDate(p.endDate)})` : ""}. Once approved, the late fee and default start after it + ${sys.graceDays} grace day(s).${Date.parse(proposed) < now ? " This date is in the past." : ""}`}>
+        <div className="row">
+          <LoadingButton loading={busy === "approve-end"} onClick={() => void run("approve-end", "approve_end_date", (toolkit) => contractCall(toolkit, sys.projectsContract, "approve_end_date", { project_id: p.id.toString(), end_date: proposed }))}>Approve</LoadingButton>
+          <LoadingButton className="secondary" loading={busy === "reject-end"} onClick={() => void run("reject-end", "reject_end_date", (toolkit) => contractCall(toolkit, sys.projectsContract, "reject_end_date", p.id.toString()))}>Reject</LoadingButton>
+        </div>
+      </Action>);
+    }
+
     if (p.status === "Active" || p.status === "Repaying") {
       const eligibleAt = defaultEligibleAt(p, sys.graceDays);
       actions.push(<Action key="default" title="Mark as defaulted" hint={`BROProjects admin or approver NFT holder. ${eligibleAt
         ? eligibleAt < now ? "This project is overdue and can be defaulted now." : `Possible after ${new Date(eligibleAt).toLocaleString()}.`
-        : ""} Unclaimed escrow joins the investor pool.`}>
+        : "Not possible until an end date is approved."} Unclaimed escrow joins the investor pool.`}>
         <LoadingButton className="secondary" loading={busy === "default"} disabled={!wallet.address} onClick={() => void run("default", "mark_default", (toolkit) => contractCall(toolkit, sys.projectsContract, "mark_default", p.id.toString()))}>Mark Default</LoadingButton>
       </Action>);
     }
@@ -772,11 +845,14 @@ export function ProjectsPage() {
           `Scope: ${project.scope}`,
           `Site: ${[project.site.street, project.site.city, project.site.state, project.site.zip].filter(Boolean).join(", ") || "—"}`,
           `Owner: ${[project.owner.name, project.owner.phone, project.owner.email].filter(Boolean).join(" · ") || "—"}`,
-          `Budget: ${formatUsd(project.budgetUsd)} at ${formatBps(project.interestBps)} over ${project.termMonths} month(s); late fee ${formatBps(project.lateFeeBpsPerDay)}/day`,
+          `Budget: ${formatUsd(project.budgetUsd)} at ${formatBps(project.interestBps)} (term ${project.termMonths} month(s), informational); late fee ${formatBps(project.lateFeeBpsPerDay)}/day since the end date once grace has passed`,
           `Funded: ${formatUsd(project.fundedUsd)} (${formatBro(project.fundedBro)}), deadline ${formatDate(project.fundingDeadline)}${project.fundedAt ? `, closed ${formatDate(project.fundedAt)}` : ""}`,
           `Est. completion: ${formatDate(project.estCompletion)}`,
           ...(project.launched
-            ? [`Repaid: ${formatUsd(project.repaidUsd)} (${formatBro(project.repaidBro)}) of ${formatUsd(project.budgetUsd * (10000n + project.interestBps) / 10000n)}`]
+            ? [
+              `End date: ${project.endDate ? `${formatDate(project.endDate)} (grace until ${new Date(Date.parse(project.endDate) + Number(system.graceDays) * DAY_MS).toLocaleString()})` : "not approved yet"}${project.proposedEndDate ? `; proposed ${formatDate(project.proposedEndDate)}, waiting for the admin` : ""}`,
+              `Repaid: ${formatUsd(project.repaidUsd)} (${formatBro(project.repaidBro)}) of ${formatUsd(baseDue(project) + currentLateFee(project, system.graceDays, Date.now()))}${currentLateFee(project, system.graceDays, Date.now()) > 0n ? ` incl. ${formatUsd(currentLateFee(project, system.graceDays, Date.now()))} late fee${project.status === "Defaulted" ? " (not collected)" : ""}` : ""}`,
+            ]
             : []),
           ...(["Repaid", "Defaulted"].includes(project.status)
             ? [`Settled pool: ${formatBro(project.settledPoolBro)}${project.uncoveredBro > 0n ? `, uncovered ${formatBro(project.uncoveredBro)}` : ""}`]
@@ -788,7 +864,7 @@ export function ProjectsPage() {
       <h4>Milestones</h4>
       <div className="table-wrap">
         <table>
-          <thead><tr><th>#</th><th>Description</th><th>Share</th><th>USD</th><th>Escrow</th><th>Due</th><th>Approved</th><th>Late fee</th><th>State</th></tr></thead>
+          <thead><tr><th>#</th><th>Description</th><th>Share</th><th>USD</th><th>Escrow</th><th>Due</th><th>Approved</th><th>State</th></tr></thead>
           <tbody>
             {project.milestones.map((milestone, index) => <tr key={index}>
               <td>{index + 1}</td>
@@ -798,7 +874,6 @@ export function ProjectsPage() {
               <td>{formatBro(milestone.escrowBro)}</td>
               <td>{milestone.dueAt ? formatDate(milestone.dueAt) : `${milestone.durationDays} days`}</td>
               <td>{formatDate(milestone.approvedAt)}</td>
-              <td>{milestone.approvedAt ? formatUsd(milestone.lateFeeUsd) : "—"}</td>
               <td>{milestone.claimed
                 ? <span className="tag ok">claimed</span>
                 : milestone.approvedAt
