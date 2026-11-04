@@ -124,6 +124,8 @@ def t():
     term_months=sp.nat,
     late_fee_bps_per_day=sp.nat,
     funded_bro=sp.nat,
+    # the listing's estimate, proposed as the end date
+    est_completion=sp.timestamp,
     milestones=list[
       sp.record(pct_bps=sp.nat, duration_days=sp.nat, usd=sp.nat)
     ],
@@ -138,9 +140,6 @@ def t():
     escrow_bro=sp.nat,
     due_at=sp.option[sp.timestamp],
     approved_at=sp.option[sp.timestamp],
-    # usd minus the late fee, fixed at approval
-    net_usd=sp.nat,
-    late_fee_usd=sp.nat,
     claimed=sp.bool,
   )
 
@@ -156,10 +155,16 @@ def t():
     late_fee_bps_per_day=sp.nat,
     funded_bro=sp.nat,
     funded_at=sp.timestamp,
+    # approved by the admin; the late fee and default start after it + grace
+    end_date=sp.option[sp.timestamp],
+    # proposed by the contractor, waiting for the admin
+    proposed_end_date=sp.option[sp.timestamp],
     milestones=sp.map[sp.nat, milestone],
     current_milestone=sp.nat,
     repaid_usd=sp.nat,
     repaid_bro=sp.nat,
+    # repayment late fee in cents, as of the last repay or default
+    late_fee_usd=sp.nat,
     settled_pool_bro=sp.nat,
     uncovered_bro=sp.nat,
     status=project_status,

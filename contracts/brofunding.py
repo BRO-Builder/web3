@@ -8,7 +8,13 @@
   the USD total reaches the budget.
 - When funding closes, the BRO and the project's financial terms are
   handed to BROProjects (`launch`), which runs milestones, repayment and
-  settlement under the same project id. Investor shares stay here and
+  settlement under the same project id. The listing's `est_completion` is
+  sent as the contractor's proposed end date; the BROProjects admin
+  approves it (or a later proposal) before it counts. `term_months` is
+  informational only.
+- Late fee: `late_fee_bps_per_day` (snapshotted here at submission) is
+  charged by BROProjects on budget + interest for each day the contractor
+  repays after the approved end date + grace, capped at 100%. Investor shares stay here and
   BROProjects reads them through `get_investment` at payout time.
 - If the deadline passes first, or the admin cancels, investors refund.
 
@@ -57,7 +63,7 @@ def funding():
       self.data.projects_contract = sp.cast(None, sp.option[sp.address])
       self.data.token_address = sp.cast(token_address, sp.address)
       self.data.token_id = sp.cast(token_id, sp.nat)
-      # snapshotted into each project at submission
+      # repayment late fee, snapshotted into each project at submission
       self.data.late_fee_bps_per_day = sp.cast(late_fee_bps_per_day, sp.nat)
       self.data.max_milestones = sp.cast(max_milestones, sp.nat)
       self.data.next_project_id = sp.nat(0)
@@ -115,7 +121,8 @@ def funding():
 
     @sp.entrypoint
     def set_late_fee(self, bps_per_day):
-      """Applies to projects submitted from now on."""
+      """Daily repayment late fee, in bps of budget + interest. Applies to
+      projects submitted from now on."""
       sp.cast(bps_per_day, sp.nat)
       assert sp.sender == self.data.admin, "NOT_ADMIN"
       assert bps_per_day <= 10000, "FEE_TOO_HIGH"
@@ -267,6 +274,7 @@ def funding():
             term_months=p.term_months,
             late_fee_bps_per_day=p.late_fee_bps_per_day,
             funded_bro=p.funded_bro,
+            est_completion=p.est_completion,
             milestones=[
               sp.record(
                 pct_bps=ms.pct_bps, duration_days=ms.duration_days, usd=ms.usd
@@ -487,6 +495,7 @@ def test_funding():
   scenario.verify(launched.contractor == contractor.address)
   scenario.verify(launched.funded_bro == 1_000_000)
   scenario.verify(launched.late_fee_bps_per_day == 100)
+  scenario.verify(launched.est_completion == deadline.add_days(90))
   scenario.verify(sp.len(launched.milestones) == 3)
   scenario.verify(bf.get_investment(sp.record(project_id=0, investor=alice.address)).bro == 600_000)
   scenario.verify(bf.get_investment(sp.record(project_id=0, investor=carol.address)).bro == 0)
