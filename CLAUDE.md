@@ -74,7 +74,7 @@ Deployment order:
 |---|---|
 | `BROMarketAssistant` (MA) | An oracle wallet pushes the BRO/USD price (`update_price`). Contracts read it via the `get_price` view, which fails when the price is unset or older than `max_price_age`. Its BRO reserve absorbs the gap between USD obligations and BRO amounts: BROProjects sends it surplus BRO and calls `cover` when short. The admin can withdraw and swap the reserve on BRODex. |
 | `BROFunding` | A contractor submits a project: USD budget in cents, fixed interest, term, milestones. Investors deposit BRO, valued in USD at the current price. When the budget is reached, all of the project's BRO and its terms go to BROProjects via `launch`, in the same operation as the closing deposit. If the deadline passes, or the admin cancels, investors refund. |
-| `BROProjects` | Splits the BRO into per-milestone escrow. The admin or an approver-NFT holder approves milestones in order, with a late fee. The contractor claims BRO worth the milestone's USD amount at today's price; the MA takes any surplus or covers any shortfall. The contractor then repays budget + interest in USD. On full repayment or default the project settles and investors claim their share (deposit + interest in BRO; the MA covers what it can). |
+| `BROProjects` | Splits the BRO into per-milestone escrow. The admin or an approver-NFT holder approves milestones in order (no milestone late fee). The contractor claims BRO worth the milestone's USD amount at today's price; the MA takes any surplus or covers any shortfall. The contractor proposes an end date (initially the listing's `est_completion`) and the BROProjects admin approves it. The contractor then repays budget + interest in USD, plus a late fee once the end date + grace has passed (counted from the end date, max 100%, paid to the funding wallet). On full repayment or default the project settles and investors claim their share (deposit + interest in BRO; the MA covers what it can). |
 
 A project has **the same id on BROFunding and BROProjects**. BROFunding keeps the listing and deposits; BROProjects keeps the progress and reads deposits through BROFunding's `get_investment` view at payout.
 
@@ -89,7 +89,7 @@ Deployment order (System 1 must exist first, because the MA trades on BRODex):
 
 ## Rules that are easy to break
 
-- **Units:** USD is `nat` cents. Price is BRO base units per USD cent × 10^6. Rates are basis points. A month is 30 days. See CONTRACT_NOTES §3.
+- **Units:** USD is `nat` cents. Price is BRO base units per USD cent × 10^6. Rates are basis points. `term_months` is informational only. See CONTRACT_NOTES §3.
 - **Rounding directions are deliberate.** Each one protects a specific side. Don't change them casually (§3).
 - **One-way links:** `delegator.set_dex` and `funding.set_projects` can be called only once, and `BROProjects.funding` has no setter. A BROFunding/BROProjects pair is bound for life; replacing either means redeploying both.
 - **Links nothing cross-checks:** `funding.market` and `projects.market` must point to the same MA, and `market.ledger` must be BROProjects. One MA serves one BROProjects.
@@ -141,7 +141,7 @@ Each deployment page fetches its compiled `.tz` from `static.eidoriantan.com/con
 
 | Route | Tool | Notes |
 |---|---|---|
-| `/projects` | BRO Projects | Takes BROFunding + BROProjects addresses and reads the MA from them. Shows the price feed (the oracle wallet can push a price here). Submit a project, list projects, and act on one: invest, cancel, refund, approve milestone, claim, repay, mark default, claim payout. Only the actions open to the connected wallet and the project's state are shown. |
+| `/projects` | BRO Projects | Takes BROFunding + BROProjects addresses and reads the MA from them. Shows the price feed (the oracle wallet can push a price here). Submit a project, list projects, and act on one: invest, cancel, refund, approve milestone, claim, propose/approve/reject the end date, repay, mark default, claim payout. Only the actions open to the connected wallet and the project's state are shown. |
 
 Operator handling: `invest` and `repay` pull BRO with FA2 `transfer`. FA2 operators have no allowance, so the pages batch add-operator → call → remove-operator in one operation. Keep that pattern in any new flow.
 

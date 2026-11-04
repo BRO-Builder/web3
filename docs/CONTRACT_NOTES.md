@@ -88,8 +88,9 @@ mismatched market and token links, but only those it can see.
 | BRO | token base units (`decimals` from token metadata; the current BRO has 6) |
 | Price | **BRO base units per USD cent × 10^6** (`PRICE_SCALE`) |
 | Rates | basis points out of 10,000 (interest, late fee per day, DEX fee, quorum) |
-| Month | 30 days (term = `term_months × 30 days`) |
-| Late days | `ceil((approved_at − due_at) / 86400)`; 1 second late = 1 day |
+| Term | `term_months` is informational only (the portal's interest quote uses it); no contract logic reads it |
+| Late days | `ceil((now − end_date) / 86400)`, counted from the approved end date (grace days included) and only once `now > end_date + grace`; 1 second past grace = grace + 1 days |
+| Late fee | `(budget_usd × (1 + interest)) × min(10000, late_days × late_fee_bps_per_day) / 10000`, rounded down (contractor) |
 
 - `usd_to_bro(c) = c × price / 10^6`
 - `bro_to_usd(b) = b × 10^6 / price`
@@ -102,7 +103,8 @@ Rounding directions (keep them this way; each one protects the side noted):
 | Deposit USD value (`invest`, partial deposit) | down | an investor is never credited more USD than they paid for |
 | BRO still needed to close funding | **up** | the closing deposit always reaches the budget exactly |
 | Milestone USD shares; escrow per milestone | down, **last takes the remainder** | shares always add up to the budget or the funded BRO |
-| Milestone claim (`usd_to_bro(net_usd)`) | down | contractor |
+| Milestone claim (`usd_to_bro(usd)`) | down | contractor |
+| Repayment late fee | down | contractor |
 | Repayment installment (`usd_to_bro_up`) | **up** | investors |
 | Payout `settled_pool × bro / funded_bro` | down | rounding dust stays in BROProjects |
 
@@ -138,7 +140,7 @@ BROProjects:                                          ▼
   - Interest is 50–5000 bps and the term is 1–60 months.
   - There are 1 to `max_milestones` milestones, each with `pct_bps > 0` and `duration_days > 0`, and the shares must add up to exactly 10,000.
   - `project_type` must be `residential` or `commercial`.
-  - The global late fee is snapshotted into the listing. `set_late_fee` is capped at 10,000 bps per day (`FEE_TOO_HIGH`) and only affects projects submitted afterwards.
+  - The global late fee (a repayment late fee, see **Repayment**) is snapshotted into the listing. `set_late_fee` is capped at 10,000 bps per day (`FEE_TOO_HIGH`) and only affects projects submitted afterwards.
 - **Listings can't be edited.** A wrong listing can only be cancelled while it is funding.
 - **Funding:**
   - `invest` is allowed while `now <= funding_deadline` (inclusive).
@@ -147,31 +149,41 @@ BROProjects:                                          ▼
 - **Refund:**
   - Allowed for `Failed`, for `Cancelled`, or for `Funding` once the deadline has passed. The first refund flips the status to `Failed`.
   - A refund deletes the investor's deposit record.
-- **Launch:** escrow is split per milestone, with the last taking the remainder. M1 is due `duration_days` after launch.
+- **Launch:** escrow is split per milestone, with the last taking the remainder. M1 is due `duration_days` after launch. The listing's `est_completion` is passed in `launch_params` and becomes the pending `proposed_end_date`; `end_date` starts as `None`.
+- **End date** (BROProjects):
+  - `propose_end_date(project_id, end_date)`: the contractor, while `Active` or `Repaying`. It replaces any pending proposal.
+  - `approve_end_date(project_id, end_date)`: the BROProjects admin. The date must equal the pending proposal (`PROPOSAL_MISMATCH`), so a proposal swapped just before approval is not approved by mistake. `end_date` becomes the proposal and the proposal is cleared.
+  - `reject_end_date(project_id)`: the BROProjects admin. Clears the proposal.
+  - Until a new proposal is approved, the previously approved `end_date` stays in force; a pending proposal never pauses the late fee or default.
+  - Nothing checks the date: the admin can approve one in the past, which makes the fee apply immediately.
+  - An end date is **not** required. Without one there is no late fee and no end-date default (a `Repaying` project without an end date can never be defaulted).
 - **Approval:**
   - Only the **current** milestone can be approved, in order.
-  - The fee is `min(100%, late_days × late_fee_bps_per_day)`, with the rate snapshotted at submission.
+  - There is **no milestone late fee**. A milestone approved late still pays its full USD amount.
   - The next milestone falls due `duration_days` after **this approval**, not after its predecessor's due date.
 - **Claim:**
-  - The contractor receives BRO worth exactly `net_usd` at today's price.
-  - If escrow exceeds that (the late fee, or BRO rose), the surplus goes to the MA.
+  - The contractor receives BRO worth exactly the milestones' `usd` at today's price.
+  - If escrow exceeds that (BRO rose), the surplus goes to the MA.
   - If escrow is short (BRO fell), the MA pays via `cover`. If the reserve is too small, **the claim fails** until the MA is topped up.
   - Claiming the last milestone moves the project to `Repaying`.
 - **Repayment:**
   - Opens only in `Repaying`. Nothing is repaid before every milestone is claimed.
-  - The amount due is `budget_usd × (1 + interest)` in cents, and each installment is converted at that day's price.
-  - Overpayment is capped at what's owed.
+  - The amount due is `budget_usd × (1 + interest)` + the late fee (§3) in cents, recomputed at each installment, and each installment is converted at that day's price.
+  - **Late fee:** none up to `end_date + grace`. After that it counts every day since `end_date` itself, so paying 1 second after grace ends charges grace + 1 days at once. Capped at 100% of budget + interest. It keeps growing while the project is still `Active` and while BROProjects is paused.
+  - `late_fee_usd` on the project records the fee as of the last `repay` (or `mark_default`). The `get_amount_due` view computes it live while `Active`/`Repaying` and uses the stored value once settled.
+  - The late fee goes to the funding wallet: investors are owed only `funded_bro × (1 + interest)`, so the extra BRO is settlement surplus.
+  - Overpayment is capped at what's owed. If a raised `grace_days` drops the fee below what has already been repaid, a `repay` of 0 settles the project.
   - Anyone can repay on a project's behalf.
-  - There is no late fee on repayment.
 - **Settlement** happens on full repayment or `mark_default`.
   - The investors' entitlement is `funded_bro × (1 + interest)` **in BRO**.
   - The pool is repaid BRO plus unclaimed escrow.
   - Any excess goes to the MA. Any shortfall is covered by the MA as far as its BRO balance allows, and the rest is recorded as `uncovered_bro`. A repayment is never blocked.
   - Each investor gets `settled_pool × deposit_bro / funded_bro`, once (`payouts_claimed`).
 - **Default:**
-  - Possible after `funded_at + term + grace`, or, while `Active`, after the current milestone's `due_at + grace`. Both are strict `>`.
+  - Possible after the approved `end_date + grace`, or, while `Active`, after the current milestone's `due_at + grace`. Both are strict `>`.
+  - The late fee owed at default is recorded in `late_fee_usd` but not collected.
   - Approved-but-unclaimed milestones are **not** paid to the contractor on default. Their escrow joins the investors' pool.
-- **Grace days are read when `mark_default` is called.** Changing `grace_days` affects every live project, unlike the late fee.
+- **Grace days are read live** by `repay`, `mark_default` and `get_amount_due`. Changing `grace_days` moves the late-fee start and default date of every live project, unlike the late fee rate.
 
 ## 6. Where the BRO sits
 
@@ -198,7 +210,8 @@ page → Manage the Reserve) directly reduces what open projects can draw on.
 | `invest`, `refund` | anyone (refund: their own deposit) |
 | `cancel_project`, `set_late_fee`, `set_market`, `set_projects`, `set_admin`, `pause` on BROFunding | BROFunding admin |
 | `launch` | BROFunding contract only (`NOT_FUNDING_CONTRACT`) |
-| `claim_milestone` | the project's contractor |
+| `claim_milestone`, `propose_end_date` | the project's contractor |
+| `approve_end_date`, `reject_end_date` | BROProjects admin only (not NFT approvers) |
 | `repay` | anyone (the payer's BRO is pulled) |
 | `claim_payout` | investors with a deposit on BROFunding |
 | `approve_milestone`, `mark_default` | **BROProjects admin, or anyone holding > 0 of the configured NFT** |
@@ -216,12 +229,13 @@ page → Manage the Reserve) directly reduces what open projects can draw on.
 | Contract | Paused blocks | Still works |
 |---|---|---|
 | BROFunding | `submit_project`, `invest`, `refund` | admin actions; `launch` can't happen (it needs `invest`) |
-| BROProjects | `claim_milestone`, `repay`, `claim_payout` | `approve_milestone`, `mark_default`, `launch`, admin actions |
+| BROProjects | `claim_milestone`, `repay`, `claim_payout` | `approve_milestone`, `mark_default`, `launch`, end-date propose/approve/reject, admin actions |
 | BRODex | liquidity and swaps | `credit_rewards` |
 
-**Late fees keep accruing while BROProjects is paused.** Approval isn't
-paused, so an approver can still approve on time. Deadlines don't move,
-though: a long pause can make projects defaultable.
+**Late fees keep accruing while BROProjects is paused,** because `repay` is
+blocked but the end date doesn't move. The admin can approve a later end date
+during a pause if that is unfair. Deadlines don't move either: a long pause
+can make projects defaultable.
 
 ## 9. Cross-contract interfaces (do not change one side only)
 
@@ -232,7 +246,7 @@ recompiling, redeploying and updating readers.
 
 | Interface | Caller → callee | Must match |
 |---|---|---|
-| `launch(t.launch_params)` | BROFunding → BROProjects | record fields and layout |
+| `launch(t.launch_params)` | BROFunding → BROProjects | record fields and layout (includes `est_completion`) |
 | `get_investment(t.investment_key) → t.investment` | BROProjects → BROFunding view | name, input and output type |
 | `get_price() → nat` | BROFunding/BROProjects → MA view | name, unit (see §3) |
 | `cover(t.cover_params)` | BROProjects → MA | record `{to_, amount}` |
@@ -276,8 +290,8 @@ Current packed code sizes:
 
 | Contract | Bytes |
 |---|---|
-| BROProjects | 10,627 |
-| BROFunding | 7,111 |
+| BROProjects | 13,776 |
+| BROFunding | 7,143 |
 | BRODex | 5,881 |
 | BROToken | 5,345 |
 | BROMarketAssistant | 2,901 |
@@ -313,6 +327,6 @@ Re-measure after every change with `packDataBytes` from `@taquito/michel-codec`.
    - **PHP oracle** (brobuilder-dex `server/oracle`): it calls `update_price` and the DEX view, and reads MA storage (`price`, `price_updated_at`, `oracle`) from TzKT.
    - **Portal** (this repo, `src/`):
      - `src/shared/contracts.ts`: the `create*Storage` builders must list every storage field of each contract.
-     - `src/pages/ProjectsPage.tsx`: parses BROFunding and BROProjects storage by field name, mirrors the default-date formula, and calls entrypoints by name.
+     - `src/pages/ProjectsPage.tsx`: parses BROFunding and BROProjects storage by field name, mirrors the late-fee, amount-due and default-date formulas, and calls entrypoints by name.
      - `src/pages/ProjectsSetupPage.tsx`: the linking, rules, pause and admin steps (§2).
 8. Redeploy everything whose Michelson changed. Remember that the BROFunding/BROProjects pair has to be replaced together (§2).
