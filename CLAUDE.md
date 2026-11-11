@@ -148,6 +148,7 @@ Operator handling: `invest` and `repay` pull BRO with FA2 `transfer`. FA2 operat
 ### Web app code notes
 
 - `src/shared/tezos.ts`: `useWallet()` and the network list. The Beacon timeout is 10 minutes because large originations (BROProjects) take wallets a long time to review.
+- `src/shared/templeChannel.ts`: Temple's own page↔extension protocol. `useWallet()` sends operations with more than 16 KB of JSON (BROFunding and BROProjects originations) through it instead of Beacon. Beacon's base58 encoding is quadratic, and decoding a request that large stalls Temple's service worker until Chrome kills it. Don't remove this without testing a BROProjects deploy in Temple.
 - `src/shared/contracts.ts`: code URLs, storage builders, and `getErrorMessage` for Beacon/RPC errors.
 - `src/shared/broProjects.ts`: price conversions (`priceFromUsd`, `usdFromPrice`, `PRICE_SCALE`), option reading, TzKT token balances.
 - `src/shared/units.ts`: `parseUnits` / `formatUnits` with bigint.
