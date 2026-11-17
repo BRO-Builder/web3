@@ -31,8 +31,8 @@ const DEFAULT_VALUES: Record<DeploymentKind, FormValues> = {
   dex: { tokenId: "0", feeBps: "30" },
   delegator: { quorumBps: "5000" },
   market: { tokenId: "0", maxPriceAge: "3600" },
-  funding: { tokenId: "0", lateFeeBpsPerDay: "100", maxMilestones: "20" },
-  projects: { tokenId: "0", graceDays: "7" },
+  funding: { tokenId: "0", lateFeeBpsPerDay: "50", builderShareBps: "3000", maxMilestones: "20" },
+  projects: { tokenId: "0", graceDays: "3" },
 };
 
 const PAGE_TEXT: Record<DeploymentKind, { title: string; subtitle: string; section: string }> = {
@@ -63,7 +63,7 @@ const PAGE_TEXT: Record<DeploymentKind, { title: string; subtitle: string; secti
   },
   projects: {
     title: "Deploy BROProjects",
-    subtitle: "Connect a wallet, link BROFunding, the market assistant and BRO token, then originate the contract that runs milestones, repayment and settlement.",
+    subtitle: "Connect a wallet, link BROFunding, the market assistant and BRO token, then originate the contract that runs draws, daily interest, the interest hold, repayment and settlement.",
     section: "3. Projects Configuration",
   },
 };
@@ -171,6 +171,7 @@ function validateFundingForm(values: FormValues, connectedAddress: string) {
   const tokenAddress = values.tokenAddress?.trim() ?? "";
   const tokenId = Number(values.tokenId);
   const lateFeeBpsPerDay = Number(values.lateFeeBpsPerDay);
+  const builderShareBps = Number(values.builderShareBps);
   const maxMilestones = Number(values.maxMilestones);
 
   if (!isValidAddress(market)) {
@@ -185,6 +186,9 @@ function validateFundingForm(values: FormValues, connectedAddress: string) {
   if (!Number.isInteger(lateFeeBpsPerDay) || lateFeeBpsPerDay < 0 || lateFeeBpsPerDay > 10000) {
     return { error: "Late fee must be between 0 and 10000 basis points per day." };
   }
+  if (!Number.isInteger(builderShareBps) || builderShareBps < 0 || builderShareBps > 5000) {
+    return { error: "BRO Builder's share must be between 0 and 5000 basis points (50%)." };
+  }
   if (!Number.isInteger(maxMilestones) || maxMilestones < 1) {
     return { error: "Max milestones must be at least 1." };
   }
@@ -192,7 +196,7 @@ function validateFundingForm(values: FormValues, connectedAddress: string) {
     return { error: "Invalid admin address." };
   }
 
-  return { value: { admin, market, tokenAddress, tokenId, lateFeeBpsPerDay, maxMilestones } };
+  return { value: { admin, market, tokenAddress, tokenId, lateFeeBpsPerDay, builderShareBps, maxMilestones } };
 }
 
 function validateProjectsForm(values: FormValues, connectedAddress: string) {
@@ -334,15 +338,19 @@ function FundingFields({ values, onChange }: FieldSetProps) {
       <TextInput type="number" value={values.tokenId ?? "0"} onChange={onChange("tokenId")} min="0" />
     </Field>
     <Field label="Late fee (basis points per day)">
-      <TextInput type="number" value={values.lateFeeBpsPerDay ?? "100"} onChange={onChange("lateFeeBpsPerDay")} min="0" max="10000" />
-      <p className="hint">Repayment late fee, snapshotted into each project at submission. Once the approved end date + grace has passed, every day since the end date costs this share of budget + interest (max 100%). 100 bps = 1% per day.</p>
+      <TextInput type="number" value={values.lateFeeBpsPerDay ?? "50"} onChange={onChange("lateFeeBpsPerDay")} min="0" max="10000" />
+      <p className="hint">Repayment late fee, saved into each project at submission. Once the approved end date + grace has passed, every day since the end date costs this share of what each repayment pays (max 100%). It goes to the funding wallet. 50 bps = 0.5% per day.</p>
+    </Field>
+    <Field label="BRO Builder's share of interest (basis points)">
+      <TextInput type="number" value={values.builderShareBps ?? "3000"} onChange={onChange("builderShareBps")} min="0" max="5000" />
+      <p className="hint">The part of every investor interest payout that goes to the funding wallet, saved into each project at submission so later changes never affect it. At most 5000 bps (50%). 3000 bps = 30%.</p>
     </Field>
     <Field label="Max milestones per project">
       <TextInput type="number" value={values.maxMilestones ?? "20"} onChange={onChange("maxMilestones")} min="1" />
     </Field>
     <Field label="Admin address">
       <TextInput value={values.adminAddress ?? ""} onChange={onChange("adminAddress")} placeholder="Defaults to the connected wallet" />
-      <p className="hint">Links BROProjects once, cancels submissions, sets the late fee, and can pause funding.</p>
+      <p className="hint">Links BROProjects once, cancels submissions, sets the late fee and BRO Builder's share, and can pause funding.</p>
     </Field>
   </>;
 }
@@ -355,7 +363,7 @@ function ProjectsFields({ values, onChange }: FieldSetProps) {
     </Field>
     <Field label="Market assistant address">
       <TextInput value={values.marketAddress ?? ""} onChange={onChange("marketAddress")} placeholder="KT1..." />
-      <p className="hint">Provides the price and covers shortfalls. Use the same market as BROFunding.</p>
+      <p className="hint">Provides the price and the funding wallet, and covers shortfalls from it. Use the same market as BROFunding.</p>
     </Field>
     <Field label="BRO token contract address">
       <TextInput value={values.tokenAddress ?? ""} onChange={onChange("tokenAddress")} placeholder="KT1..." />
@@ -365,12 +373,12 @@ function ProjectsFields({ values, onChange }: FieldSetProps) {
       <TextInput type="number" value={values.tokenId ?? "0"} onChange={onChange("tokenId")} min="0" />
     </Field>
     <Field label="Grace period (days)">
-      <TextInput type="number" value={values.graceDays ?? "7"} onChange={onChange("graceDays")} min="0" />
-      <p className="hint">Days past a milestone due date or the approved end date before a project can be marked as defaulted. Repaying in full within the grace after the end date avoids the late fee.</p>
+      <TextInput type="number" value={values.graceDays ?? "3"} onChange={onChange("graceDays")} min="0" />
+      <p className="hint">Days after the approved end date (the end of the contract period) to repay with no late fee, and days past a milestone due date or the end date before a project can be marked as defaulted. Applies to all projects, read live.</p>
     </Field>
     <Field label="Admin address">
       <TextInput value={values.adminAddress ?? ""} onChange={onChange("adminAddress")} placeholder="Defaults to the connected wallet" />
-      <p className="hint">Approves milestones and contractors' proposed end dates, sets the approver NFT and grace period, and can pause the contract.</p>
+      <p className="hint">Approves milestones and contractors' proposed end dates (the end date ends the contract period), sets the approver NFT and grace period, and can pause the contract.</p>
     </Field>
   </>;
 }
@@ -515,7 +523,7 @@ export function DeploymentPage({ kind }: { kind: DeploymentKind }) {
       <strong>Next:</strong> deploy <a href="/deployment-projects">BROProjects</a> with this contract's address, then use the <a href="/deployment-projects-setup">projects setup page</a> to call <code>set_projects</code> (one-time). Investments that complete funding fail until it is linked.
     </div>}
     {kind === "projects" && <div className="note">
-      <strong>After deploying:</strong> use the <a href="/deployment-projects-setup">projects setup page</a> to link BROFunding (<code>set_projects</code>) and the market (<code>set_ledger</code>) to this contract, authorize the funding wallet, push the first price, and set the approver NFT.
+      <strong>After deploying:</strong> use the <a href="/deployment-projects-setup">projects setup page</a> to link BROFunding (<code>set_projects</code>) and the market (<code>set_ledger</code>) to this contract, fund the funding wallet and have it authorize the market as operator, push the first price, and set the approver NFT.
     </div>}
     <LoadingButton className="deploy" loading={deploying} disabled={!wallet.address} onClick={() => void deploy()}>
       Deploy Contract

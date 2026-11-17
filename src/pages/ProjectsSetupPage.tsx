@@ -28,7 +28,9 @@ type Setup = {
   tokenId: string;
   token: TokenMetadata;
   lateFeeBpsPerDay: bigint;
+  builderShareBps: bigint;
   graceDays: bigint;
+  flows: { builderFeeBro: bigint; lateFeeBro: bigint; surplusBro: bigint; coveredBro: bigint };
   nft: { address: string; tokenId: string } | null;
   price: bigint;
   priceUpdatedAt: string;
@@ -67,6 +69,7 @@ export function ProjectsSetupPage() {
   const [nftAddress, setNftAddress] = useState("");
   const [nftTokenId, setNftTokenId] = useState("0");
   const [lateFee, setLateFee] = useState("");
+  const [builderShare, setBuilderShare] = useState("");
   const [graceDays, setGraceDays] = useState("");
   const [maxPriceAge, setMaxPriceAge] = useState("");
   const [newMarket, setNewMarket] = useState("");
@@ -133,7 +136,14 @@ export function ProjectsSetupPage() {
         tokenId,
         token,
         lateFeeBpsPerDay: toBigInt(fundingStorage.late_fee_bps_per_day),
+        builderShareBps: toBigInt(fundingStorage.builder_share_bps),
         graceDays: toBigInt(projectsStorage.grace_days),
+        flows: {
+          builderFeeBro: toBigInt(projectsStorage.flows.builder_fee_bro),
+          lateFeeBro: toBigInt(projectsStorage.flows.late_fee_bro),
+          surplusBro: toBigInt(projectsStorage.flows.surplus_bro),
+          coveredBro: toBigInt(projectsStorage.flows.covered_bro),
+        },
         nft: nft ? { address: nft.address, tokenId: nft.token_id.toString() } : null,
         price: toBigInt(marketStorage.price),
         priceUpdatedAt: marketStorage.price_updated_at,
@@ -143,6 +153,7 @@ export function ProjectsSetupPage() {
       };
       setSetup(next);
       setLateFee(next.lateFeeBpsPerDay.toString());
+      setBuilderShare(next.builderShareBps.toString());
       setGraceDays(next.graceDays.toString());
       setMaxPriceAge(next.maxPriceAge.toString());
       if (next.nft) {
@@ -265,6 +276,7 @@ export function ProjectsSetupPage() {
 
   const s = setup;
   const symbol = s?.token.symbol ?? "BRO";
+  const formatBps = (bps: bigint) => `${formatUnits(bps, 2)}%`;
   const formatBro = (units: bigint | null) => units === null ? "unknown" : `${formatUnits(units, s?.token.decimals ?? 0)} ${symbol}`;
   const isAdmin = (key: ContractKey) => Boolean(s && wallet.address === s.admins[key]);
   const isOracle = Boolean(s && wallet.address === s.oracle);
@@ -357,11 +369,26 @@ export function ProjectsSetupPage() {
         </label>
         <p className="hint">
           Transfers {symbol} from your wallet ({formatBro(s.walletBro)}) to the funding wallet ({s.fundingWallet}).
-          The funding wallet covers milestone and settlement shortfalls when {symbol} loses value against USD.
+          The funding wallet covers draw, interest payout and settlement shortfalls when {symbol} loses value against USD, and receives price surplus, BRO Builder's share of interest and late fees.
         </p>
         <LoadingButton loading={busy === "bro"} disabled={!wallet.address} onClick={fundBro}>Send {symbol}</LoadingButton>
         <p className="hint">The funding wallet owner must authorize the market assistant as an FA2 operator before shortfalls can be covered.</p>
         <LoadingButton className="secondary" loading={busy === "operator"} disabled={!wallet.address || wallet.address !== s.fundingWallet} onClick={authorizeFundingWallet}>Authorize Market Assistant</LoadingButton>
+      </Section>
+
+      <Section title="6. Funding Wallet Flows">
+        <p className="hint">Totals across all projects on this BROProjects, from its <code>flows</code> storage. Sends to and covers from the wallet in the same call are netted on-chain but counted here in full.</p>
+        <div className="info">
+          {[
+            `To the wallet:`,
+            `  BRO Builder's share of interest: ${formatBro(s.flows.builderFeeBro)}`,
+            `  Late fees: ${formatBro(s.flows.lateFeeBro)}`,
+            `  Price surplus: ${formatBro(s.flows.surplusBro)}`,
+            `From the wallet:`,
+            `  Price shortfalls covered: ${formatBro(s.flows.coveredBro)}`,
+            `Current wallet balance: ${formatBro(s.fundingWalletBro)}`,
+          ].join("\n")}
+        </div>
       </Section>
 
       <Section title="7. Push the BRO/USD Price">
@@ -408,13 +435,19 @@ export function ProjectsSetupPage() {
           <input id="lateFee" className="grow" type="number" min="0" max="10000" value={lateFee} onChange={(event) => setLateFee(event.target.value)} />
           <LoadingButton className="secondary" loading={busy === "fee"} disabled={!isAdmin("funding")} onClick={() => setNumber("fee", "set_late_fee", lateFee, (n) => n >= 0 && n <= 10000, "Late fee must be between 0 and 10000 bps.", "funding")}>Update</LoadingButton>
         </div>
-        <p className="hint">BROFunding admin. Repayment late fee per day since the end date, charged once the grace period has passed. Snapshotted into projects submitted afterwards.</p>
+        <p className="hint">BROFunding admin. Repayment late fee per day since the end date, charged on what each repayment pays once the grace period has passed (max 100%). Saved into projects submitted afterwards.</p>
+        <label htmlFor="builderShare">BRO Builder's share of interest (basis points)</label>
+        <div className="row">
+          <input id="builderShare" className="grow" type="number" min="0" max="5000" value={builderShare} onChange={(event) => setBuilderShare(event.target.value)} />
+          <LoadingButton className="secondary" loading={busy === "share"} disabled={!isAdmin("funding")} onClick={() => setNumber("share", "set_builder_share", builderShare, (n) => n >= 0 && n <= 5000, "BRO Builder's share must be between 0 and 5000 bps (50%).", "funding")}>Update</LoadingButton>
+        </div>
+        <p className="hint">BROFunding admin. Current: {formatBps(s.builderShareBps)}. The part of investors' interest that goes to the funding wallet, at most 50%. Saved into projects submitted afterwards; running projects keep theirs.</p>
         <label htmlFor="graceDays">Grace period (days)</label>
         <div className="row">
           <input id="graceDays" className="grow" type="number" min="0" value={graceDays} onChange={(event) => setGraceDays(event.target.value)} />
           <LoadingButton className="secondary" loading={busy === "grace"} disabled={!isAdmin("projects")} onClick={() => setNumber("grace", "set_grace_days", graceDays, (n) => n >= 0, "Grace period must be a non-negative number of days.", "projects")}>Update</LoadingButton>
         </div>
-        <p className="hint">BROProjects admin. Days past a milestone due date or the approved end date before a project can be defaulted or charged a late fee. Applies to all projects immediately.</p>
+        <p className="hint">BROProjects admin. Days after the approved end date to repay with no late fee, and days past a milestone due date or the end date before a project can be defaulted. Applies to all projects immediately.</p>
         <label htmlFor="maxPriceAge">Max price age (seconds)</label>
         <div className="row">
           <input id="maxPriceAge" className="grow" type="number" min="1" value={maxPriceAge} onChange={(event) => setMaxPriceAge(event.target.value)} />
@@ -429,7 +462,7 @@ export function ProjectsSetupPage() {
             {s.fundingPaused ? "Unpause BROFunding" : "Pause BROFunding"}
           </LoadingButton>
         </Step>
-        <Step title={`BROProjects: ${s.projectsPaused ? "paused" : "running"}`} hint="BROProjects admin. While paused, claiming milestones, repaying and claiming payouts are disabled. Approvals and defaults still work.">
+        <Step title={`BROProjects: ${s.projectsPaused ? "paused" : "running"}`} hint="BROProjects admin. While paused, draws, interest payouts, repayments and investor claims are disabled; interest and late fees keep accruing. Approvals, defaults, releasing undrawn money and end-date actions still work.">
           <LoadingButton className={s.projectsPaused ? undefined : "secondary"} loading={busy === "pause-projects"} disabled={!isAdmin("projects")} onClick={() => void run("pause-projects", s.projectsPaused ? "Unpause BROProjects" : "Pause BROProjects", (toolkit, c) => call(toolkit, c.projects, "pause", !c.projectsPaused))}>
             {s.projectsPaused ? "Unpause BROProjects" : "Pause BROProjects"}
           </LoadingButton>

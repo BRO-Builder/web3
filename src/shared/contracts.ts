@@ -131,6 +131,7 @@ export function createFundingStorage(values: {
   tokenAddress: string;
   tokenId: number;
   lateFeeBpsPerDay: number;
+  builderShareBps: number;
   maxMilestones: number;
 }) {
   const metadata = new MichelsonMap();
@@ -144,6 +145,7 @@ export function createFundingStorage(values: {
     token_address: values.tokenAddress,
     token_id: values.tokenId,
     late_fee_bps_per_day: values.lateFeeBpsPerDay,
+    builder_share_bps: values.builderShareBps,
     max_milestones: values.maxMilestones,
     next_project_id: 0,
     projects: new MichelsonMap(),
@@ -172,6 +174,9 @@ export function createProjectsStorage(values: {
     nft: null,
     grace_days: values.graceDays,
     projects: new MichelsonMap(),
+    // BRO each investor has claimed so far, per project
     payouts_claimed: new MichelsonMap(),
+    // totals of what went to and came from the funding wallet
+    flows: { builder_fee_bro: 0, late_fee_bro: 0, surplus_bro: 0, covered_bro: 0 },
   };
 }
