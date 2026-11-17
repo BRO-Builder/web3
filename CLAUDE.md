@@ -130,9 +130,9 @@ Each deployment page fetches its compiled `.tz` from `static.eidoriantan.com/con
 | `/deployment-dex` | BRODex | Delegator vault address, token address and id, swap fee (bps), admin. |
 | `/deployment-dex-setup` | DEX pool setup | After deploying the DEX: `set_dex` on the vault, add the DEX as token operator, initialize the pool. |
 | `/deployment-market` | BROMarketAssistant | BRO token and id, funding wallet, oracle address, max price age (seconds), admin. |
-| `/deployment-funding` | BROFunding | MA, BRO token and id, late fee (bps/day), max milestones, admin. |
-| `/deployment-projects` | BROProjects | BROFunding, MA, BRO token and id, grace period (days), admin. |
-| `/deployment-projects-setup` | Projects setup | Takes BROFunding + BROProjects addresses. Links them (`set_projects`, `set_ledger`), funds the funding wallet and lets its owner authorize the MA as operator, sets the oracle and funding wallet, pushes the first price, sets the approver NFT, edits rules (late fee, grace days, max price age), pauses, changes the market and transfers admins. Flags mismatched links. |
+| `/deployment-funding` | BROFunding | MA, BRO token and id, late fee (bps/day, default 50), BRO Builder's share of interest (bps, default 3000, max 5000), max milestones, admin. |
+| `/deployment-projects` | BROProjects | BROFunding, MA, BRO token and id, grace period (days, default 3), admin. |
+| `/deployment-projects-setup` | Projects setup | Takes BROFunding + BROProjects addresses. Links them (`set_projects`, `set_ledger`), funds the funding wallet and lets its owner authorize the MA as operator, sets the oracle and funding wallet, pushes the first price, shows the funding wallet `flows` totals, sets the approver NFT, edits rules (late fee, BRO Builder's share, grace days, max price age), pauses, changes the market and transfers admins. Flags mismatched links. Targets the current contracts only (not the old pair). |
 
 ### Trading and voting
 
@@ -146,9 +146,7 @@ Each deployment page fetches its compiled `.tz` from `static.eidoriantan.com/con
 
 | Route | Tool | Notes |
 |---|---|---|
-| `/projects` | BRO Projects | Takes BROFunding + BROProjects addresses and reads the MA from them. Shows the price feed (the oracle wallet can push a price here). Submit a project, list projects, and act on one: invest, cancel, refund, approve milestone, claim, propose/approve/reject the end date, repay, mark default, claim payout. Only the actions open to the connected wallet and the project's state are shown. |
-
-**Portal not yet updated for the new projects rules.** The `/deployment-funding`, `/deployment-projects`, `/deployment-projects-setup` and `/projects` pages (and `src/shared/contracts.ts`) still use the previous BROFunding/BROProjects layout: `interest_bps` instead of `monthly_rate_bps`, no `builder_share_bps` (deploy form, rules or `set_builder_share`), the old project fields, and no `pay_interest` or `release_undrawn` actions. Update them before deploying the new pair (CONTRACT_NOTES §14).
+| `/projects` | BRO Projects | Takes BROFunding + BROProjects addresses and reads the MA from them. Shows the price feed (the oracle wallet can push a price here). Submit a project (the monthly rate comes read-only from the BRO rate API and must be 3–9%; the form shows the interest hold), list projects, and act on one: invest (with the investor estimate), cancel, refund, approve milestone, draw (showing the hold withheld), pay interest, release undrawn money, propose/approve/reject the end date, repay (with the owed breakdown), mark default, claim payout (with the investor statement). Only the actions open to the connected wallet and the project's state are shown. |
 
 Operator handling: `invest` and `repay` pull BRO with FA2 `transfer`. FA2 operators have no allowance, so the pages batch add-operator → call → remove-operator in one operation. Keep that pattern in any new flow.
 
@@ -157,6 +155,7 @@ Operator handling: `invest` and `repay` pull BRO with FA2 `transfer`. FA2 operat
 - `src/shared/tezos.ts`: `useWallet()` and the network list. The Beacon timeout is 10 minutes because large originations (BROProjects) take wallets a long time to review.
 - `src/shared/templeChannel.ts`: Temple's own page↔extension protocol. `useWallet()` sends operations with more than 16 KB of JSON (BROFunding and BROProjects originations; BROProjects now packs to ~24 KB) through it instead of Beacon. Beacon's base58 encoding is quadratic, and decoding a request that large stalls Temple's service worker until Chrome kills it. Don't remove this without testing a BROProjects deploy in Temple.
 - `src/shared/contracts.ts`: code URLs, storage builders, and `getErrorMessage` for Beacon/RPC errors.
+- `src/shared/projectRules.ts`: mirrors the BROProjects math (interest days, hold, amount owed, late fee, 30-day marks, draw split, default date) in bigint seconds and cents. Change it together with `broprojects.py`.
 - `src/shared/broProjects.ts`: price conversions (`priceFromUsd`, `usdFromPrice`, `PRICE_SCALE`), option reading, TzKT token balances.
 - `src/shared/units.ts`: `parseUnits` / `formatUnits` with bigint.
 - `src/shared/Controls.tsx`: `Page`, `Section`, `NetworkWallet`, `ContractCode` building blocks. Use these for new pages.

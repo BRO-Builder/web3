@@ -397,18 +397,19 @@ Re-measure after every change with `packDataBytes` from `@taquito/michel-codec`.
 3. Extend the scenario for every new path. Use `_exception`, keep the balance-conservation `total()` check, and cover price-up and price-down cases.
 4. Run every scenario: `.venv/bin/python -m contracts.<name>` for `brotoken brodelegator brodex bromarket brofunding broprojects`. Treat the "Error in generated Michelson contract" warning as a failure (§11).
 5. Re-measure the packed size (§12).
-6. Rebuild the compacted upload files in `build/upload/` (`build/` is gitignored), and republish them where the deployment pages fetch them (`CONTRACT_CODE_URLS` in `src/shared/contracts.ts`).
+6. Rebuild the compacted upload files in `build/upload/` (`build/` is gitignored), and republish them where the deployment pages fetch them (`CONTRACT_CODE_URLS` in `src/shared/contracts.ts`). Upload these, not SmartPy's annotated `.tz` (BROProjects' is ~17 MB). They are made from the compiled `step_*_contract.json` with `emitMicheline` from `@taquito/michel-codec` (sections in `parameter, storage, code, view` order), and should pack to the same bytes as the JSON.
 7. Update the readers that mirror storage or entrypoints:
    - **Build Pool pages** (brobuilder-dex): `src/shared/ledger.ts` parses BROFunding and BROProjects storage by field name, and mirrors the late-fee, default-date, entitlement and payout formulas. The pages call entrypoints by name.
    - **PHP oracle** (brobuilder-dex `server/oracle`): it calls `update_price` and the DEX view, and reads MA storage (`price`, `price_updated_at`, `oracle`) from TzKT.
    - **Portal** (this repo, `src/`):
      - `src/shared/contracts.ts`: the `create*Storage` builders must list every storage field of each contract.
-     - `src/pages/ProjectsPage.tsx`: parses BROFunding and BROProjects storage by field name, mirrors the late-fee, amount-due and default-date formulas, and calls entrypoints by name.
+     - `src/shared/projectRules.ts`: mirrors the interest, hold, amount-owed, late-fee, 30-day-mark, draw-split and default-date formulas.
+     - `src/pages/ProjectsPage.tsx`: parses BROFunding and BROProjects storage by field name, shows the investor estimate and statement, and calls entrypoints by name.
      - `src/pages/ProjectsSetupPage.tsx`: the linking, rules, pause and admin steps (§2).
 8. Redeploy everything whose Michelson changed. Remember that the BROFunding/BROProjects pair has to be replaced together (§2).
 
-**Pending (new rules):** steps 6–8 have not been done for the new
-BROFunding/BROProjects. The portal and the Build Pool pages still read and
-call the old pair's layout: `interest_bps` instead of `monthly_rate_bps`, no
-`builder_share_bps` in `createFundingStorage`, the old project fields in
-`createProjectsStorage`, and no `pay_interest` or `release_undrawn` actions.
+**Pending (new rules):** the portal in this repo is updated for the new
+BROFunding/BROProjects and targets them only. The Build Pool pages and PHP
+readers in `brobuilder-dex` still read the old pair's layout (`interest_bps`,
+the old project fields, no `pay_interest` or `release_undrawn`), and the new
+pair has not been deployed yet.
