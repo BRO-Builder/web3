@@ -81,7 +81,9 @@ def t():
     est_completion=sp.timestamp,
     funding_deadline=sp.timestamp,
     budget_usd=sp.nat,
-    interest_bps=sp.nat,
+    # interest per month (30 days) on drawn money, 300-900 bps
+    monthly_rate_bps=sp.nat,
+    # sizes the interest hold: budget x monthly rate x term
     term_months=sp.nat,
     milestones=list[milestone_input],
   )
@@ -101,9 +103,11 @@ def t():
     created_at=sp.timestamp,
     funding_deadline=sp.timestamp,
     budget_usd=sp.nat,
-    interest_bps=sp.nat,
+    monthly_rate_bps=sp.nat,
     term_months=sp.nat,
     late_fee_bps_per_day=sp.nat,
+    # BRO Builder's share of investors' interest, saved at submission
+    builder_share_bps=sp.nat,
     milestones=sp.map[sp.nat, milestone_terms],
     funded_usd=sp.nat,
     funded_bro=sp.nat,
@@ -120,9 +124,10 @@ def t():
     project_id=sp.nat,
     contractor=sp.address,
     budget_usd=sp.nat,
-    interest_bps=sp.nat,
+    monthly_rate_bps=sp.nat,
     term_months=sp.nat,
     late_fee_bps_per_day=sp.nat,
+    builder_share_bps=sp.nat,
     funded_bro=sp.nat,
     # the listing's estimate, proposed as the end date
     est_completion=sp.timestamp,
@@ -131,7 +136,7 @@ def t():
     ],
   )
 
-  # BROProjects: a milestone in progress
+  # BROProjects: a milestone in progress. Claiming it is a draw.
   milestone: type = sp.record(
     pct_bps=sp.nat,
     duration_days=sp.nat,
@@ -140,33 +145,68 @@ def t():
     escrow_bro=sp.nat,
     due_at=sp.option[sp.timestamp],
     approved_at=sp.option[sp.timestamp],
-    claimed=sp.bool,
+    # set when drawn; interest runs from here on the outstanding cents
+    drawn_at=sp.option[sp.timestamp],
+    # drawn cents not yet repaid (repayments reduce the oldest draws first)
+    outstanding_usd=sp.nat,
   )
 
   project_status: type = sp.variant(
     Active=sp.unit, Repaying=sp.unit, Repaid=sp.unit, Defaulted=sp.unit
   )
 
+  # Where BRO went to or came from the funding wallet, in BRO base units
+  flows: type = sp.record(
+    # BRO Builder's share of investors' interest
+    builder_fee_bro=sp.nat,
+    late_fee_bro=sp.nat,
+    # price gains: escrow or repayments worth more than needed
+    surplus_bro=sp.nat,
+    # price losses paid in by the wallet
+    covered_bro=sp.nat,
+  )
+
   project: type = sp.record(
     contractor=sp.address,
     budget_usd=sp.nat,
-    interest_bps=sp.nat,
+    monthly_rate_bps=sp.nat,
     term_months=sp.nat,
     late_fee_bps_per_day=sp.nat,
+    builder_share_bps=sp.nat,
     funded_bro=sp.nat,
+    # launch; interest payouts fall due every 30 days from here
     funded_at=sp.timestamp,
-    # approved by the admin; the late fee and default start after it + grace
+    # approved by the admin: the end of the contract period
     end_date=sp.option[sp.timestamp],
     # proposed by the contractor, waiting for the admin
     proposed_end_date=sp.option[sp.timestamp],
     milestones=sp.map[sp.nat, milestone],
     current_milestone=sp.nat,
+    # interest hold withheld from draws so far (cents) and its BRO
+    hold_usd=sp.nat,
+    hold_bro=sp.nat,
+    # interest paid out of the hold so far (cents)
+    hold_used_usd=sp.nat,
+    # interest has been paid out of the hold up to this time
+    paid_until=sp.timestamp,
+    # cent-days of principal already repaid (interest stopped on it)
+    closed_usd_days=sp.nat,
+    # interest above the hold paid by the contractor (cents)
+    interest_paid_usd=sp.nat,
+    # everything repaid, in cents (interest, principal and late fee)
     repaid_usd=sp.nat,
+    # repaid principal BRO held until settlement
     repaid_bro=sp.nat,
-    # repayment late fee in cents, as of the last repay or default
+    # late fee paid so far (cents)
     late_fee_usd=sp.nat,
-    settled_pool_bro=sp.nat,
+    # undrawn escrow handed back to investors (period over or settled)
+    released=sp.bool,
+    # BRO allotted to investors so far (interest, undrawn, principal)
+    investor_bro=sp.nat,
     uncovered_bro=sp.nat,
+    # cents (with late fee) still owed when the project defaulted
+    default_due_usd=sp.nat,
+    flows=flows,
     status=project_status,
   )
 

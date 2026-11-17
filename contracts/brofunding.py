@@ -1,7 +1,9 @@
 """BROFunding: lists BRO Builder projects and collects their funding.
 
-- A contractor submits a project with a USD budget (cents), a fixed
-  interest rate, a repayment term and milestones that split the budget.
+- A contractor submits a project with a USD budget (cents), a monthly
+  interest rate (3-9%, charged by the day on drawn money only), a term in
+  months (it sizes the interest hold) and milestones that split the
+  budget.
   The listing (including site and owner details, in plain text) stays here.
 - Investors deposit BRO. Each deposit is valued in USD at the current
   BRO/USD price (read from BROMarketAssistant), and funding closes when
@@ -10,12 +12,14 @@
   handed to BROProjects (`launch`), which runs milestones, repayment and
   settlement under the same project id. The listing's `est_completion` is
   sent as the contractor's proposed end date; the BROProjects admin
-  approves it (or a later proposal) before it counts. `term_months` is
-  informational only.
-- Late fee: `late_fee_bps_per_day` (snapshotted here at submission) is
-  charged by BROProjects on budget + interest for each day the contractor
-  repays after the approved end date + grace, capped at 100%. Investor shares stay here and
-  BROProjects reads them through `get_investment` at payout time.
+  approves it (or a later proposal) before it counts; it ends the
+  contract period.
+- Saved into each listing at submission, so later changes never affect
+  it: `late_fee_bps_per_day` (charged by BROProjects on what is repaid
+  after the approved end date + grace, capped at 100%) and
+  `builder_share_bps` (BRO Builder's share of investors' interest, at
+  most 50%). Investor shares stay here and BROProjects reads them through
+  `get_investment` at payout time.
 - If the deadline passes first, or the admin cancels, investors refund.
 
 Deployment order:
@@ -53,6 +57,7 @@ def funding():
       token_address,
       token_id,
       late_fee_bps_per_day,
+      builder_share_bps,
       max_milestones,
     ):
       self.data.metadata = sp.cast(metadata, t.metadata)
@@ -65,6 +70,8 @@ def funding():
       self.data.token_id = sp.cast(token_id, sp.nat)
       # repayment late fee, snapshotted into each project at submission
       self.data.late_fee_bps_per_day = sp.cast(late_fee_bps_per_day, sp.nat)
+      # BRO Builder's share of interest, snapshotted at submission
+      self.data.builder_share_bps = sp.cast(builder_share_bps, sp.nat)
       self.data.max_milestones = sp.cast(max_milestones, sp.nat)
       self.data.next_project_id = sp.nat(0)
       self.data.projects = sp.cast(sp.big_map(), sp.big_map[sp.nat, t.listing])
@@ -129,6 +136,15 @@ def funding():
       self.data.late_fee_bps_per_day = bps_per_day
 
     @sp.entrypoint
+    def set_builder_share(self, bps):
+      """BRO Builder's share of investors' interest, at most 5,000 bps
+      (50%). Applies to projects submitted from now on."""
+      sp.cast(bps, sp.nat)
+      assert sp.sender == self.data.admin, "NOT_ADMIN"
+      assert bps <= 5000, "SHARE_TOO_HIGH"
+      self.data.builder_share_bps = bps
+
+    @sp.entrypoint
     def pause(self, new_paused):
       """Admin-only switch. When paused, submit_project, invest and refund
       are disabled."""
@@ -161,7 +177,7 @@ def funding():
       assert params.budget_usd > 0, "BAD_BUDGET"
       assert params.funding_deadline > sp.now, "BAD_DEADLINE"
       assert (
-        params.interest_bps >= 50 and params.interest_bps <= 5000
+        params.monthly_rate_bps >= 300 and params.monthly_rate_bps <= 900
       ), "BAD_INTEREST"
       assert params.term_months >= 1 and params.term_months <= 60, "BAD_TERM"
       n = sp.len(params.milestones)
@@ -200,9 +216,10 @@ def funding():
         created_at=sp.now,
         funding_deadline=params.funding_deadline,
         budget_usd=params.budget_usd,
-        interest_bps=params.interest_bps,
+        monthly_rate_bps=params.monthly_rate_bps,
         term_months=params.term_months,
         late_fee_bps_per_day=self.data.late_fee_bps_per_day,
+        builder_share_bps=self.data.builder_share_bps,
         milestones=milestones,
         funded_usd=0,
         funded_bro=0,
@@ -270,9 +287,10 @@ def funding():
             project_id=params.project_id,
             contractor=p.contractor,
             budget_usd=p.budget_usd,
-            interest_bps=p.interest_bps,
+            monthly_rate_bps=p.monthly_rate_bps,
             term_months=p.term_months,
             late_fee_bps_per_day=p.late_fee_bps_per_day,
+            builder_share_bps=p.builder_share_bps,
             funded_bro=p.funded_bro,
             est_completion=p.est_completion,
             milestones=[
@@ -337,7 +355,7 @@ def _ts(seconds):
   return sp.timestamp(T0 + seconds)
 
 
-def _project(deadline, budget, interest, term, milestones, project_type="residential"):
+def _project(deadline, budget, rate, term, milestones, project_type="residential"):
   return sp.record(
     project_type=project_type,
     title="Kitchen remodel",
@@ -347,7 +365,7 @@ def _project(deadline, budget, interest, term, milestones, project_type="residen
     est_completion=deadline.add_days(90),
     funding_deadline=deadline,
     budget_usd=budget,
-    interest_bps=interest,
+    monthly_rate_bps=rate,
     term_months=term,
     milestones=[
       sp.record(description="Phase %d" % i, pct_bps=pct, duration_days=days)
@@ -394,6 +412,7 @@ def test_funding():
     token_address=token.address,
     token_id=0,
     late_fee_bps_per_day=100,
+    builder_share_bps=3000,
     max_milestones=20,
   )
   scenario += bf
@@ -423,19 +442,19 @@ def test_funding():
   deadline = _ts(30 * DAY)
   ms3 = [(5000, 10), (3000, 10), (2000, 10)]
   bad = [
-    ("BAD_MILESTONE_PCT_SUM", _project(deadline, 100_000, 800, 12, [(5000, 10), (4000, 10)])),
-    ("BAD_MILESTONE_PCT_SUM", _project(deadline, 100_000, 800, 12, [(6000, 10), (5000, 10)])),
-    ("BAD_MILESTONE_PCT", _project(deadline, 100_000, 800, 12, [(10000, 10), (0, 10)])),
-    ("BAD_MILESTONE_DURATION", _project(deadline, 100_000, 800, 12, [(10000, 0)])),
-    ("BAD_MILESTONE_COUNT", _project(deadline, 100_000, 800, 12, [(500, 1)] * 20 + [(0, 1)])),
-    ("BAD_MILESTONE_COUNT", _project(deadline, 100_000, 800, 12, [])),
-    ("BAD_DEADLINE", _project(_ts(0), 100_000, 800, 12, ms3)),
-    ("BAD_BUDGET", _project(deadline, 0, 800, 12, ms3)),
-    ("BAD_INTEREST", _project(deadline, 100_000, 49, 12, ms3)),
-    ("BAD_INTEREST", _project(deadline, 100_000, 5001, 12, ms3)),
-    ("BAD_TERM", _project(deadline, 100_000, 800, 0, ms3)),
-    ("BAD_TERM", _project(deadline, 100_000, 800, 61, ms3)),
-    ("BAD_PROJECT_TYPE", _project(deadline, 100_000, 800, 12, ms3, "industrial")),
+    ("BAD_MILESTONE_PCT_SUM", _project(deadline, 100_000, 400, 12, [(5000, 10), (4000, 10)])),
+    ("BAD_MILESTONE_PCT_SUM", _project(deadline, 100_000, 400, 12, [(6000, 10), (5000, 10)])),
+    ("BAD_MILESTONE_PCT", _project(deadline, 100_000, 400, 12, [(10000, 10), (0, 10)])),
+    ("BAD_MILESTONE_DURATION", _project(deadline, 100_000, 400, 12, [(10000, 0)])),
+    ("BAD_MILESTONE_COUNT", _project(deadline, 100_000, 400, 12, [(500, 1)] * 20 + [(0, 1)])),
+    ("BAD_MILESTONE_COUNT", _project(deadline, 100_000, 400, 12, [])),
+    ("BAD_DEADLINE", _project(_ts(0), 100_000, 400, 12, ms3)),
+    ("BAD_BUDGET", _project(deadline, 0, 400, 12, ms3)),
+    ("BAD_INTEREST", _project(deadline, 100_000, 299, 12, ms3)),
+    ("BAD_INTEREST", _project(deadline, 100_000, 901, 12, ms3)),
+    ("BAD_TERM", _project(deadline, 100_000, 400, 0, ms3)),
+    ("BAD_TERM", _project(deadline, 100_000, 400, 61, ms3)),
+    ("BAD_PROJECT_TYPE", _project(deadline, 100_000, 400, 12, ms3, "industrial")),
   ]
   for err, params in bad:
     bf.submit_project(
@@ -443,13 +462,15 @@ def test_funding():
     )
 
   bf.submit_project(
-    _project(deadline, 100_000, 800, 12, ms3), _sender=contractor, _now=_ts(0)
+    _project(deadline, 100_000, 400, 12, ms3), _sender=contractor, _now=_ts(0)
   )
   p0 = bf.data.projects[0]
   scenario.verify(p0.status == sp.variant.Funding(sp.unit))
   scenario.verify(p0.milestones[0].usd == 50_000)
   scenario.verify(p0.milestones[2].usd == 20_000)
   scenario.verify(p0.late_fee_bps_per_day == 100)
+  scenario.verify(p0.builder_share_bps == 3000)
+  scenario.verify(p0.monthly_rate_bps == 400)
 
   scenario.h2("Linking BROProjects")
   price(10_000_000, _ts(0))
@@ -495,6 +516,8 @@ def test_funding():
   scenario.verify(launched.contractor == contractor.address)
   scenario.verify(launched.funded_bro == 1_000_000)
   scenario.verify(launched.late_fee_bps_per_day == 100)
+  scenario.verify(launched.builder_share_bps == 3000)
+  scenario.verify(launched.monthly_rate_bps == 400)
   scenario.verify(launched.est_completion == deadline.add_days(90))
   scenario.verify(sp.len(launched.milestones) == 3)
   scenario.verify(bf.get_investment(sp.record(project_id=0, investor=alice.address)).bro == 600_000)
@@ -509,7 +532,7 @@ def test_funding():
   scenario.h2("Funding misses its deadline, investors refund")
   t1 = 30 * DAY
   bf.submit_project(
-    _project(_ts(t1 + 5 * DAY), 10_000, 800, 6, [(10000, 5)]),
+    _project(_ts(t1 + 5 * DAY), 10_000, 400, 6, [(10000, 5)]),
     _sender=contractor,
     _now=_ts(t1),
   )
@@ -533,7 +556,7 @@ def test_funding():
   scenario.h2("Stale price, cancellation and refund")
   t2 = 40 * DAY
   bf.submit_project(
-    _project(_ts(t2 + 10 * DAY), 10_000, 800, 6, [(10000, 5)]),
+    _project(_ts(t2 + 10 * DAY), 10_000, 400, 6, [(10000, 5)]),
     _sender=contractor,
     _now=_ts(t2),
   )
@@ -562,23 +585,30 @@ def test_funding():
   bf.set_late_fee(10_001, _sender=admin, _valid=False, _exception="FEE_TOO_HIGH")
   bf.set_late_fee(50, _sender=carol, _valid=False, _exception="NOT_ADMIN")
   bf.set_late_fee(50, _sender=admin)
+  bf.set_builder_share(5001, _sender=admin, _valid=False, _exception="SHARE_TOO_HIGH")
+  bf.set_builder_share(2000, _sender=carol, _valid=False, _exception="NOT_ADMIN")
+  bf.set_builder_share(5000, _sender=admin)
+  bf.set_builder_share(2000, _sender=admin)
   bf.set_market(carol.address, _sender=carol, _valid=False, _exception="NOT_ADMIN")
   bf.set_admin(carol.address, _sender=carol, _valid=False, _exception="NOT_ADMIN")
   bf.pause(True, _sender=carol, _valid=False, _exception="NOT_ADMIN")
   bf.pause(True, _sender=admin)
   t3 = 50 * DAY
   bf.submit_project(
-    _project(_ts(t3 + 10 * DAY), 10_000, 800, 6, [(10000, 5)]),
+    _project(_ts(t3 + 10 * DAY), 10_000, 400, 6, [(10000, 5)]),
     _sender=contractor, _now=_ts(t3), _valid=False, _exception="PAUSED",
   )
   bf.refund(2, _sender=bob, _now=_ts(t3), _valid=False, _exception="PAUSED")
   bf.pause(False, _sender=admin)
   bf.submit_project(
-    _project(_ts(t3 + 10 * DAY), 10_000, 800, 6, [(10000, 5)]),
+    _project(_ts(t3 + 10 * DAY), 10_000, 400, 6, [(10000, 5)]),
     _sender=contractor,
     _now=_ts(t3),
   )
   scenario.verify(bf.data.projects[3].late_fee_bps_per_day == 50)
+  # running listings keep the share saved at their submission
+  scenario.verify(bf.data.projects[0].builder_share_bps == 3000)
+  scenario.verify(bf.data.projects[3].builder_share_bps == 2000)
   price(10_000_000, _ts(t3))
   bf.pause(True, _sender=admin)
   bf.invest(
