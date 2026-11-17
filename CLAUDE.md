@@ -8,7 +8,7 @@ This repo holds two things:
 The contracts form two systems that share the BRO token:
 
 - **Token-DEX-Delegator**: trading, liquidity, the BRO token, and delegating the DEX's XTZ to a baker to earn rewards.
-- **Projects-Funding-MarketAssistant**: contractors request loans for projects, investors fund them and earn interest, and the market assistant keeps project income and outgoings fixed in USD.
+- **Projects-Funding-MarketAssistant**: contractors request loans for projects, investors fund them and earn daily interest on the money actually drawn, BRO Builder takes a share of that interest, and a funding wallet (gated by the market assistant) keeps project income and outgoings fixed in USD.
 
 The detailed contract notes are in **`docs/CONTRACT_NOTES.md`**: units and rounding, the project lifecycle, permissions, pause behaviour, cross-contract interfaces, size limits and the change checklist. Read it before changing a contract. This file is the overview.
 
@@ -40,11 +40,11 @@ contracts/
   brotoken.py       BROToken            FA2 fungible token
   brodelegator.py   BRODelegator        XTZ vault, LP voting, baker delegation
   brodex.py         BRODex              BRO <-> XTZ constant-product AMM
-  bromarket.py      BROMarketAssistant  BRO/USD price feed + BRO/XTZ reserve
+  bromarket.py      BROMarketAssistant  BRO/USD price feed + gate to the funding wallet
   brofunding.py     BROFunding          project listings, investor deposits, refunds
-  broprojects.py    BROProjects         milestones, repayment, default, settlement, payouts
+  broprojects.py    BROProjects         draws, daily interest, hold payouts, repayment, default, settlement, investor claims
   utils/common.py   shared types (module `t`) and shared math/views (module `units`)
-  utils/helper.py   test-only stubs (DummyFA2, a stub vault, a stub launch target)
+  utils/helper.py   test-only stubs (DummyFA2, a stub DEX, a stub launch target)
 src/
   main.tsx          routes
   pages/            one page per tool (see "Internal tools")
@@ -72,28 +72,31 @@ Deployment order:
 
 | Contract | Role |
 |---|---|
-| `BROMarketAssistant` (MA) | An oracle wallet pushes the BRO/USD price (`update_price`). Contracts read it via the `get_price` view, which fails when the price is unset or older than `max_price_age`. Its BRO reserve absorbs the gap between USD obligations and BRO amounts: BROProjects sends it surplus BRO and calls `cover` when short. The admin can withdraw and swap the reserve on BRODex. |
-| `BROFunding` | A contractor submits a project: USD budget in cents, fixed interest, term, milestones. Investors deposit BRO, valued in USD at the current price. When the budget is reached, all of the project's BRO and its terms go to BROProjects via `launch`, in the same operation as the closing deposit. If the deadline passes, or the admin cancels, investors refund. |
-| `BROProjects` | Splits the BRO into per-milestone escrow. The admin or an approver-NFT holder approves milestones in order (no milestone late fee). The contractor claims BRO worth the milestone's USD amount at today's price; the MA takes any surplus or covers any shortfall. The contractor proposes an end date (initially the listing's `est_completion`) and the BROProjects admin approves it. The contractor then repays budget + interest in USD, plus a late fee once the end date + grace has passed (counted from the end date, max 100%, paid to the funding wallet). On full repayment or default the project settles and investors claim their share (deposit + interest in BRO; the MA covers what it can). |
+| `BROMarketAssistant` (MA) | An oracle wallet pushes the BRO/USD price (`update_price`). Contracts read it via the `get_price` view, which fails when the price is unset or older than `max_price_age`. It holds no funds: the BRO that absorbs the gap between USD obligations and BRO amounts sits in a plain tz **funding wallet**. BROProjects sends surplus, BRO Builder's interest share and late fees straight to that wallet, and calls `cover` here when short; `cover` pulls BRO from the wallet, which must have made the MA an FA2 operator. BRO only: it never holds or accepts XTZ. |
+| `BROFunding` | A contractor submits a project: USD budget in cents, a monthly interest rate (300–900 bps), a term in months (it sizes the interest hold), milestones and an estimated completion. The late fee rate and BRO Builder's share (`builder_share_bps`, admin-set, max 50%) are saved into the listing. Investors deposit BRO, valued in USD at the current price. When the budget is reached, all of the project's BRO and its terms go to BROProjects via `launch`, in the same operation as the closing deposit. If the deadline passes, or the admin cancels, investors refund. |
+| `BROProjects` | Splits the BRO into per-milestone escrow. The admin or an approver-NFT holder approves milestones in order. Claiming approved milestones is a **draw**: the first draws withhold the interest hold (budget × monthly rate × term, kept as BRO) and the contractor gets the rest at today's price; the funding wallet takes any surplus or covers any shortfall. Interest runs per day (monthly rate / 30, partial days in full) only on drawn money still outstanding. Every 30 days from launch anyone can call `pay_interest` to pay the interest earned out of the hold: BRO Builder's share to the funding wallet, the rest to investors. The admin-approved end date (initially proposed from `est_completion`) ends the contract period: no more draws, and anyone can `release_undrawn` to give undrawn money back to investors. The contractor repays at any time, in installments (late fee, then interest above the hold, then principal); the total is drawn + interest − hold, plus a late fee once the end date + grace has passed (counted from the end date, max 100%, paid to the funding wallet). On full repayment or default the project settles. Investors `claim_payout` their share of everything allotted to them at any time. |
 
-A project has **the same id on BROFunding and BROProjects**. BROFunding keeps the listing and deposits; BROProjects keeps the progress and reads deposits through BROFunding's `get_investment` view at payout.
+A project has **the same id on BROFunding and BROProjects**. BROFunding keeps the listing and deposits; BROProjects keeps the progress and reads deposits through BROFunding's `get_investment` view at every investor claim.
 
-Deployment order (System 1 must exist first, because the MA trades on BRODex):
-1. `BROMarketAssistant(dex, token, oracle, max_price_age)`
-2. `BROFunding(market, token, late_fee_bps_per_day, max_milestones)`
-3. `BROProjects(funding, market, token, grace_days)`
+Deployment order (System 1 should exist first: the oracle prices BRO from BRODex):
+1. `BROMarketAssistant(admin, oracle, funding_wallet, token, token_id, max_price_age)`
+2. `BROFunding(admin, market, token, token_id, late_fee_bps_per_day, builder_share_bps, max_milestones)`
+3. `BROProjects(admin, funding, market, token, token_id, grace_days)`
 4. `funding.set_projects(<projects>)`. **One-time and irreversible.**
 5. `market.set_ledger(<projects>)`. It must be BROProjects, not BROFunding.
-6. Optional: `projects.set_nft(...)` for NFT approvers.
-7. Fund the MA reserve, push a first price, and keep the oracle running.
+6. The funding wallet makes the MA an FA2 operator of its BRO, and is funded with BRO.
+7. Optional: `projects.set_nft(...)` for NFT approvers.
+8. Push a first price, and keep the oracle running.
+
+The worked examples in the rules (e.g. $10,000 at 4%/month for 2 months: hold $800, draws $4,000 + $6,000, repaid $9,760, investors +$392, BRO Builder +$168) are checked in the `broprojects.py` scenario. See CONTRACT_NOTES §5.
 
 ## Rules that are easy to break
 
-- **Units:** USD is `nat` cents. Price is BRO base units per USD cent × 10^6. Rates are basis points. `term_months` is informational only. See CONTRACT_NOTES §3.
+- **Units:** USD is `nat` cents. Price is BRO base units per USD cent × 10^6. Rates are basis points; `monthly_rate_bps` is per 30 days. `term_months` only sizes the interest hold; the approved end date ends the contract period. See CONTRACT_NOTES §3.
 - **Rounding directions are deliberate.** Each one protects a specific side. Don't change them casually (§3).
 - **One-way links:** `delegator.set_dex` and `funding.set_projects` can be called only once, and `BROProjects.funding` has no setter. A BROFunding/BROProjects pair is bound for life; replacing either means redeploying both.
-- **Links nothing cross-checks:** `funding.market` and `projects.market` must point to the same MA, and `market.ledger` must be BROProjects. One MA serves one BROProjects.
-- **A stale or missing price blocks `invest`, `claim_milestone` and `repay`.**
+- **Links nothing cross-checks:** `funding.market` and `projects.market` must point to the same MA, `market.ledger` must be BROProjects, and the funding wallet must keep the MA as its FA2 operator. One MA serves one BROProjects.
+- **A stale or missing price blocks `invest`, `claim_milestone`, `pay_interest`, `repay` and `mark_default`.**
 - **Shared types:** changing anything in `utils/common.py` changes the Michelson of every contract that imports it. On-chain views return `None` on a type mismatch, which surfaces as `*_UNAVAILABLE` errors (§9).
 - **Size:** wallets reject large originations well below the 32 KB protocol limit. Re-measure packed size after changes (§12).
 - **Project data is public and permanent.** Owner name, phone, email and site address are stored in plain text on BROFunding.
@@ -102,9 +105,11 @@ Deployment order (System 1 must exist first, because the MA trades on BRODex):
 ### SmartPy gotchas
 
 - fa2_lib's module is named `t`, which clashes with ours. Use `DummyFA2` in scenarios, not `BROToken`.
-- `DummyFA2` **does not enforce operators**, so tests pass even when operator setup is missing. Check real-token flows on a testnet.
+- `DummyFA2` **enforces operators** like a real FA2, so scenarios must set them up (BRODex's scenario doesn't yet and fails with `FA2_NOT_OPERATOR`). Still check real-token flows on a testnet.
 - Importing a contract file runs its test, e.g. `broprojects` also runs the `brofunding` scenario.
-- Private functions can't call other private functions. Put shared logic in `units`.
+- Private functions can't call other private functions. Module-level functions can call each other: put shared logic there or in `units`.
+- **Treat `[warning] Error in generated Michelson contract` as a failure** even when the test passes: grep the `.tz` for `# Error`. A local named `o` once caused it (CONTRACT_NOTES §11).
+- Views in scenarios run at the time of the last call; snapshot lazy values with `scenario.compute(...)`.
 - Keep the `total()` balance-conservation check when you extend a scenario, and use `_exception="ERR"` for expected failures.
 - Each scenario originates several contracts, including stubs. Use `build/<Name>/log.txt` to find which `step_*_cont_N_contract.*` file is the real contract.
 
@@ -124,10 +129,10 @@ Each deployment page fetches its compiled `.tz` from `static.eidoriantan.com/con
 | `/deployment-delegator` | BRODelegator | Admin and voting quorum (bps). Deploy this before the DEX. |
 | `/deployment-dex` | BRODex | Delegator vault address, token address and id, swap fee (bps), admin. |
 | `/deployment-dex-setup` | DEX pool setup | After deploying the DEX: `set_dex` on the vault, add the DEX as token operator, initialize the pool. |
-| `/deployment-market` | BROMarketAssistant | BRO token and id, BRODex, oracle address, max price age (seconds), admin. |
+| `/deployment-market` | BROMarketAssistant | BRO token and id, funding wallet, oracle address, max price age (seconds), admin. |
 | `/deployment-funding` | BROFunding | MA, BRO token and id, late fee (bps/day), max milestones, admin. |
 | `/deployment-projects` | BROProjects | BROFunding, MA, BRO token and id, grace period (days), admin. |
-| `/deployment-projects-setup` | Projects setup | Takes BROFunding + BROProjects addresses. Links them (`set_projects`, `set_ledger`), funds the MA reserve, withdraws and swaps it on BRODex, pushes the first price, sets the oracle and DEX, sets the approver NFT, edits rules (late fee, grace days, max price age), pauses, changes the market and transfers admins. Flags mismatched links. |
+| `/deployment-projects-setup` | Projects setup | Takes BROFunding + BROProjects addresses. Links them (`set_projects`, `set_ledger`), funds the funding wallet and lets its owner authorize the MA as operator, sets the oracle and funding wallet, pushes the first price, sets the approver NFT, edits rules (late fee, grace days, max price age), pauses, changes the market and transfers admins. Flags mismatched links. |
 
 ### Trading and voting
 
@@ -143,12 +148,14 @@ Each deployment page fetches its compiled `.tz` from `static.eidoriantan.com/con
 |---|---|---|
 | `/projects` | BRO Projects | Takes BROFunding + BROProjects addresses and reads the MA from them. Shows the price feed (the oracle wallet can push a price here). Submit a project, list projects, and act on one: invest, cancel, refund, approve milestone, claim, propose/approve/reject the end date, repay, mark default, claim payout. Only the actions open to the connected wallet and the project's state are shown. |
 
+**Portal not yet updated for the new projects rules.** The `/deployment-funding`, `/deployment-projects`, `/deployment-projects-setup` and `/projects` pages (and `src/shared/contracts.ts`) still use the previous BROFunding/BROProjects layout: `interest_bps` instead of `monthly_rate_bps`, no `builder_share_bps` (deploy form, rules or `set_builder_share`), the old project fields, and no `pay_interest` or `release_undrawn` actions. Update them before deploying the new pair (CONTRACT_NOTES §14).
+
 Operator handling: `invest` and `repay` pull BRO with FA2 `transfer`. FA2 operators have no allowance, so the pages batch add-operator → call → remove-operator in one operation. Keep that pattern in any new flow.
 
 ### Web app code notes
 
 - `src/shared/tezos.ts`: `useWallet()` and the network list. The Beacon timeout is 10 minutes because large originations (BROProjects) take wallets a long time to review.
-- `src/shared/templeChannel.ts`: Temple's own page↔extension protocol. `useWallet()` sends operations with more than 16 KB of JSON (BROFunding and BROProjects originations) through it instead of Beacon. Beacon's base58 encoding is quadratic, and decoding a request that large stalls Temple's service worker until Chrome kills it. Don't remove this without testing a BROProjects deploy in Temple.
+- `src/shared/templeChannel.ts`: Temple's own page↔extension protocol. `useWallet()` sends operations with more than 16 KB of JSON (BROFunding and BROProjects originations; BROProjects now packs to ~24 KB) through it instead of Beacon. Beacon's base58 encoding is quadratic, and decoding a request that large stalls Temple's service worker until Chrome kills it. Don't remove this without testing a BROProjects deploy in Temple.
 - `src/shared/contracts.ts`: code URLs, storage builders, and `getErrorMessage` for Beacon/RPC errors.
 - `src/shared/broProjects.ts`: price conversions (`priceFromUsd`, `usdFromPrice`, `PRICE_SCALE`), option reading, TzKT token balances.
 - `src/shared/units.ts`: `parseUnits` / `formatUnits` with bigint.
